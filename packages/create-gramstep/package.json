@@ -4,8 +4,31 @@
   "description": "GramStep ワンコマンドセットアップCLI",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/twoappletaro-open/gramstep-oss.git",
+    "directory": "packages/create-gramstep"
+  },
+  "homepage": "https://github.com/twoappletaro-open/gramstep-oss/tree/main/packages/create-gramstep",
+  "bugs": {
+    "url": "https://github.com/twoappletaro-open/gramstep-oss/issues"
+  },
+  "keywords": [
+    "gramstep",
+    "instagram",
+    "instagram-dm",
+    "cloudflare-workers",
+    "create",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "create-gramstep": "./dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist"
