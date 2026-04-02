@@ -18,6 +18,7 @@ dataDeletionRoutes.post("/", async (c) => {
     kv: c.env.KV,
     r2: c.env.R2,
     appSecret: c.env.META_APP_SECRET,
+    baseUrl: new URL(c.req.url).origin,
   });
 
   const result = await svc.verifyAndProcessCallback(body, signatureHeader);

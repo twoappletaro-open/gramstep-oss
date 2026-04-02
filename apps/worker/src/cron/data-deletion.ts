@@ -22,6 +22,7 @@ export async function handleDataDeletion(
     kv: env.KV,
     r2: env.R2,
     appSecret: env.META_APP_SECRET,
+    baseUrl: env.DASHBOARD_URL || "",
   });
 
   const result = await svc.processPhysicalDeletion();

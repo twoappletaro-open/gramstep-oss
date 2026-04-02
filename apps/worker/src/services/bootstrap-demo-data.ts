@@ -3,6 +3,7 @@ interface BootstrapDemoInput {
   accountId: string;
   operatorId: string;
   workerOrigin: string;
+  dashboardUrl: string;
   now: number;
 }
 
@@ -27,9 +28,18 @@ function json(value: unknown): string {
 }
 
 export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedSummary> {
-  const { db, accountId, operatorId, workerOrigin, now } = input;
+  const { db, accountId, operatorId, workerOrigin, dashboardUrl, now } = input;
   const hour = 3600;
   const day = 86400;
+  const demoAssetVersion = "20260402-12";
+  const normalizedDashboardUrl = dashboardUrl.replace(/\/$/, "");
+  const demoStaticImageBaseUrl = `${normalizedDashboardUrl}/demo`;
+  const demoStaticImageUrl = (slug: string, ext = "png") =>
+    `${demoStaticImageBaseUrl}/${slug}.${ext}?v=${demoAssetVersion}`;
+  const demoAdminUrl = `${normalizedDashboardUrl}/ja`;
+  const demoFirstDmImageUrl = `${normalizedDashboardUrl}/demo/initial-demo-dm-v3.jpg?v=${demoAssetVersion}`;
+  const demoSurveyImageUrl = `${normalizedDashboardUrl}/demo/initial-demo-survey.png?v=${demoAssetVersion}`;
+  const demoBookingImageUrl = `${normalizedDashboardUrl}/demo/initial-demo-booking.png?v=${demoAssetVersion}`;
 
   const settings = {
     delivery_window_start: 9,
@@ -43,10 +53,11 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       privacy_policy_url: `${workerOrigin}/privacy-policy`,
       purpose_description: "Instagram DMの自動応答、アンケート取得、抽選キャンペーン、有人対応の初期動作確認用サンプル設定です。",
       verification_steps: [
-        "1. 管理画面のトリガーで「資料」「相談」「抽選」キーワード導線を確認",
-        "2. アンケート「無料プレゼント希望アンケート」を開始して回答を確認",
-        "3. キャンペーン一覧で時間指定配信・即時抽選・後日抽選の3種類を確認",
-        "4. ユーザー一覧と分析画面で会話ログ、クリック、CVのサンプル値を確認",
+        "1. 左メニューのパッケージで「フォロワー限定特典」「未フォロー向けフォロー案内」を確認",
+        "2. トリガーで「資料」「相談」「抽選」「フォロー特典」キーワード導線を確認",
+        "3. アンケート「無料プレゼント希望アンケート」を開始して回答を確認",
+        "4. キャンペーン一覧で時間指定配信・即時抽選・後日抽選の3種類を確認",
+        "5. ユーザー一覧と分析画面で会話ログ、クリック、CVのサンプル値を確認",
       ].join("\n"),
       human_agent_status: "not_requested",
     },
@@ -126,7 +137,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       igScopedId: "17841400000000003",
       username: "demo_new_lead",
       displayName: "高橋 翼",
-      followerStatus: "unknown",
+      followerStatus: "not_following",
       score: 6,
       metadata: {
         goal_theme: "",
@@ -239,6 +250,43 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       body: "{{display_name}}さん向けに、Instagram導線の無料相談枠をご案内できます。希望なら「予約」と返信してください。",
     },
     {
+      id: "tpl_demo_reservation_confirm",
+      name: "無料相談予約受付",
+      type: "text",
+      body: "{{display_name}}さん、無料相談の予約希望を受け付けました。希望日程をこのまま返信してください。",
+    },
+    {
+      id: "tpl_demo_reservation_received",
+      name: "無料相談希望日程受付",
+      type: "text",
+      body: "{{display_name}}さん、希望日程ありがとうございます。内容を確認してご案内します。",
+    },
+    {
+      id: "tpl_demo_reservation_closing",
+      name: "予約導線デモ終了案内",
+      type: "generic",
+      body: json({
+        elements: [
+          {
+            title: "デモはここまでです",
+            subtitle: "GitHub から GramStep OSS を始められます。",
+            image_url: demoStaticImageUrl("initial-demo-hero"),
+            default_action: {
+              type: "web_url",
+              url: "https://twoappletaro-open.github.io/gramstep-oss/",
+            },
+            buttons: [
+              {
+                type: "web_url",
+                title: "GitHubを見る",
+                url: "https://twoappletaro-open.github.io/gramstep-oss/",
+              },
+            ],
+          },
+        ],
+      }),
+    },
+    {
       id: "tpl_demo_survey_thanks",
       name: "アンケート完了お礼",
       type: "text",
@@ -269,13 +317,152 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
         ],
       }),
     },
+    {
+      id: "pkg_demo_entry",
+      name: "フォロワー条件デモパッケージ",
+      type: "quick_reply",
+      body: json({
+        version: 1,
+        kind: "package",
+        text: "{{display_name}}さん、受け取りたい案内を選んでください。",
+        buttons: [
+          {
+            id: "btn_follow_offer",
+            label: "フォロー特典",
+            action: {
+              type: "send_message",
+              selectionMode: "follower_condition",
+              useFollowerCondition: true,
+              followerPackageId: "pkg_demo_following_offer",
+              nonFollowerPackageId: "pkg_demo_non_following_offer",
+            },
+          },
+          {
+            id: "btn_consult",
+            label: "無料相談",
+            action: {
+              type: "send_message",
+              selectionMode: "specific",
+              useFollowerCondition: false,
+              packageId: "pkg_demo_consult",
+            },
+          },
+        ],
+      }),
+    },
+    {
+      id: "pkg_demo_following_offer",
+      name: "フォロワー限定特典パッケージ",
+      type: "quick_reply",
+      body: json({
+        version: 1,
+        kind: "package",
+        text: "{{display_name}}さんはフォロワー確認済みです。限定特典として配信設計テンプレート集をご案内します。",
+        buttons: [
+          {
+            id: "btn_offer_consult",
+            label: "無料相談へ進む",
+            action: {
+              type: "send_message",
+              selectionMode: "specific",
+              useFollowerCondition: false,
+              packageId: "pkg_demo_consult",
+            },
+          },
+          {
+            id: "btn_offer_more",
+            label: "別の案内を見る",
+            action: {
+              type: "send_message",
+              selectionMode: "specific",
+              useFollowerCondition: false,
+              packageId: "pkg_demo_survey_followup",
+            },
+          },
+        ],
+      }),
+    },
+    {
+      id: "pkg_demo_non_following_offer",
+      name: "未フォロー向け案内パッケージ",
+      type: "quick_reply",
+      body: json({
+        version: 1,
+        kind: "package",
+        text: "{{display_name}}さん、この特典はフォロワー向けです。先にフォローしてから、下の「特典を再確認」を押してください。",
+        buttons: [
+          {
+            id: "btn_retry_follow_offer",
+            label: "特典を再確認",
+            action: {
+              type: "send_message",
+              selectionMode: "follower_condition",
+              useFollowerCondition: true,
+              followerPackageId: "pkg_demo_following_offer",
+              nonFollowerPackageId: "pkg_demo_non_following_offer",
+            },
+          },
+        ],
+      }),
+    },
+    {
+      id: "pkg_demo_consult",
+      name: "無料相談案内パッケージ",
+      type: "text",
+      body: json({
+        version: 1,
+        kind: "package",
+        text: "{{display_name}}さん向けに、Instagram導線の無料相談枠をご案内できます。希望なら「予約」と返信してください。",
+        buttons: [],
+      }),
+    },
+    {
+      id: "pkg_demo_survey_followup",
+      name: "アンケート完了後フォローアップ",
+      type: "quick_reply",
+      body: json({
+        version: 1,
+        kind: "package",
+        text: "{{display_name}}さん、ご回答ありがとうございます。続けて受け取りたい案内を選んでください。",
+        buttons: [
+          {
+            id: "btn_follow_offer",
+            label: "フォロー特典",
+            action: {
+              type: "send_message",
+              selectionMode: "follower_condition",
+              useFollowerCondition: true,
+              followerPackageId: "pkg_demo_following_offer",
+              nonFollowerPackageId: "pkg_demo_non_following_offer",
+            },
+          },
+          {
+            id: "btn_consult",
+            label: "無料相談",
+            action: {
+              type: "send_message",
+              selectionMode: "specific",
+              useFollowerCondition: false,
+              packageId: "pkg_demo_consult",
+            },
+          },
+        ],
+      }),
+    },
   ];
   for (const template of templates) {
     await run(
       db,
-      `INSERT OR IGNORE INTO templates
+      `INSERT INTO templates
        (id, account_id, name, type, body, variables, version, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, '[]', 1, 1, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, '[]', 1, 1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         type = excluded.type,
+         body = excluded.body,
+         variables = excluded.variables,
+         is_active = excluded.is_active,
+         updated_at = excluded.updated_at`,
       template.id,
       accountId,
       template.name,
@@ -296,15 +483,67 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
           id: "scn_demo_first_dm_step1",
           order: 1,
           delay: 0,
-          type: "text",
-          payload: "こんにちは。ここではgramstepの初回DMデモをお見せします。",
+          type: "rich_menu",
+          payload: json({
+            type: "rich_menu",
+            image_aspect_ratio: "square",
+            elements: [
+              {
+                title: "gramstep 初回DMデモ",
+                subtitle: "{{display_name}}さん向けに、初回DMから予約導線までを3分で体験できます。",
+                image_url: demoStaticImageUrl("initial-demo-hero"),
+                default_action: { type: "web_url", url: demoAdminUrl },
+                buttons: [],
+              },
+            ],
+          }),
         },
         {
           id: "scn_demo_first_dm_step2",
           order: 2,
           delay: 0,
-          type: "text",
-          payload: "シナリオ配信、タグ付け、スコア更新、アンケート取得、キャンペーン導線まで一通り試せます。",
+          type: "rich_menu",
+          payload: json({
+            type: "rich_menu",
+            image_aspect_ratio: "square",
+            elements: [
+              {
+                title: "初回DMデモ",
+                subtitle: "右にスワイプして、初回DM・アンケート・予約導線の流れを確認できます。",
+                default_action: { type: "web_url", url: demoAdminUrl },
+                buttons: [
+                  { type: "postback", title: "デモを再開", payload: "デモ" },
+                ],
+              },
+              {
+                title: "初回DM",
+                subtitle: "第一印象で興味を作り、会話を始める",
+                image_url: demoFirstDmImageUrl,
+                default_action: { type: "web_url", url: demoAdminUrl },
+                buttons: [
+                  { type: "postback", title: "デモを再開", payload: "デモ" },
+                ],
+              },
+              {
+                title: "アンケート",
+                subtitle: "回答内容でタグと温度感を取得する",
+                image_url: demoSurveyImageUrl,
+                default_action: { type: "web_url", url: demoAdminUrl },
+                buttons: [
+                  { type: "postback", title: "無料診断", payload: "START_MARKETING_SURVEY" },
+                ],
+              },
+              {
+                title: "予約導線",
+                subtitle: "希望日程の回収まで自然につなぐ",
+                image_url: demoBookingImageUrl,
+                default_action: { type: "web_url", url: demoAdminUrl },
+                buttons: [
+                  { type: "postback", title: "相談予約", payload: "予約" },
+                ],
+              },
+            ],
+          }),
         },
         {
           id: "scn_demo_first_dm_step3",
@@ -312,7 +551,8 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
           delay: 0,
           type: "quick_reply",
           payload: json({
-            text: "ここまでが初回デモです。次に進む場合は、無料診断アンケートか資料導線を選んでください。",
+            type: "quick_reply",
+            text: "次にアンケートのデモをお見せします。無料診断アンケートか資料導線を選んでください。",
             quick_replies: [
               { content_type: "text", title: "無料診断", payload: "START_MARKETING_SURVEY" },
               { content_type: "text", title: "資料を見る", payload: "資料" },
@@ -332,7 +572,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
           order: 1,
           delay: 0,
           type: "text",
-          payload: "資料リクエストありがとうございます。まず現状を1分で把握したいので、次の質問に答えてください。",
+          payload: json({ type: "text", text: "資料リクエストありがとうございます。まず現状を1分で把握したいので、次の質問に答えてください。" }),
         },
         {
           id: "scn_demo_welcome_step2",
@@ -340,6 +580,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
           delay: 300,
           type: "quick_reply",
           payload: json({
+            type: "quick_reply",
             text: "今いちばん強化したいのはどれですか？",
             quick_replies: [
               { content_type: "text", title: "集客", payload: "GOAL_TRAFFIC" },
@@ -353,21 +594,21 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
     {
       id: "scn_demo_consult",
       name: "相談希望者フォロー",
-      triggerType: "comment",
+      triggerType: "dm",
       steps: [
         {
           id: "scn_demo_consult_step1",
           order: 1,
           delay: 0,
           type: "text",
-          payload: "コメントありがとうございます。無料相談の概要と流れをこのままご案内します。",
+          payload: json({ type: "text", text: "ご相談ありがとうございます。無料相談の概要と流れをこのままご案内します。" }),
         },
         {
           id: "scn_demo_consult_step2",
           order: 2,
           delay: 86400,
           type: "text",
-          payload: "前日のリマインドです。まだ予約前なら、今の課題を一言で返信してください。",
+          payload: json({ type: "text", text: "前日のリマインドです。まだ予約前なら、今の課題を一言で返信してください。" }),
         },
       ],
     },
@@ -375,9 +616,16 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
   for (const scenario of scenarios) {
     await run(
       db,
-      `INSERT OR IGNORE INTO scenarios
+      `INSERT INTO scenarios
        (id, account_id, name, trigger_type, trigger_config, is_active, bot_disclosure_enabled, version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, '{}', 1, 0, 1, ?, ?)`,
+       VALUES (?, ?, ?, ?, '{}', 1, 0, 1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         trigger_type = excluded.trigger_type,
+         trigger_config = excluded.trigger_config,
+         is_active = excluded.is_active,
+         bot_disclosure_enabled = excluded.bot_disclosure_enabled,
+         updated_at = excluded.updated_at`,
       scenario.id,
       accountId,
       scenario.name,
@@ -389,9 +637,16 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
     for (const step of scenario.steps) {
       await run(
         db,
-        `INSERT OR IGNORE INTO scenario_steps
+        `INSERT INTO scenario_steps
          (id, scenario_id, step_order, delay_seconds, absolute_datetime, message_type, message_payload, condition_config, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, ?)`,
+         VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           step_order = excluded.step_order,
+           delay_seconds = excluded.delay_seconds,
+           absolute_datetime = excluded.absolute_datetime,
+           message_type = excluded.message_type,
+           message_payload = excluded.message_payload,
+           condition_config = excluded.condition_config`,
         step.id,
         scenario.id,
         step.order,
@@ -412,7 +667,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
     surveyId,
     accountId,
     "無料プレゼント希望アンケート",
-    "tpl_demo_survey_thanks",
+    "pkg_demo_survey_followup",
     now,
     now,
   );
@@ -549,9 +804,31 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       id: "trg_demo_first_dm",
       name: "初回DMデモ開始",
       type: "dm",
+      matchType: "exact",
+      keywords: ["START_FIRST_DM_DEMO"],
+      fireMode: "first_only",
+      actions: [
+        { type: "enroll_scenario", scenarioId: "scn_demo_first_dm" },
+      ],
+    },
+    {
+      id: "trg_demo_first_dm_restart",
+      name: "初回DMデモ再開キーワード",
+      type: "dm",
+      matchType: "partial",
+      keywords: ["デモ", "初回DM", "初回デモ"],
+      fireMode: "unlimited",
+      actions: [
+        { type: "enroll_scenario", scenarioId: "scn_demo_first_dm" },
+      ],
+    },
+    {
+      id: "trg_demo_first_dm_menu",
+      name: "初回DMデモメニュー開始",
+      type: "ice_breaker",
       matchType: "partial",
       keywords: [],
-      fireMode: "first_only",
+      fireMode: "unlimited",
       actions: [
         { type: "enroll_scenario", scenarioId: "scn_demo_first_dm" },
       ],
@@ -578,14 +855,65 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       fireMode: "unlimited",
       actions: [
         { type: "send_template", templateId: "tpl_demo_quickreply" },
+      ],
+    },
+    {
+      id: "trg_demo_offer_checklist",
+      name: "資料導線チェック選択",
+      type: "dm",
+      matchType: "exact",
+      keywords: ["OFFER_CHECKLIST"],
+      fireMode: "unlimited",
+      actions: [
         { type: "add_tag", tagId: "tag_consult" },
         { type: "update_score", delta: 10 },
+        { type: "update_metadata", key: "offer_interest", value: "導線チェック" },
+        { type: "start_survey", surveyId },
+      ],
+    },
+    {
+      id: "trg_demo_offer_flow",
+      name: "資料配信設計選択",
+      type: "dm",
+      matchType: "exact",
+      keywords: ["OFFER_FLOW"],
+      fireMode: "unlimited",
+      actions: [
+        { type: "add_tag", tagId: "tag_consult" },
+        { type: "update_score", delta: 12 },
+        { type: "update_metadata", key: "offer_interest", value: "配信設計" },
+        { type: "start_survey", surveyId },
+      ],
+    },
+    {
+      id: "trg_demo_offer_consult",
+      name: "資料無料相談選択",
+      type: "dm",
+      matchType: "exact",
+      keywords: ["OFFER_CONSULT"],
+      fireMode: "unlimited",
+      actions: [
+        { type: "add_tag", tagId: "tag_consult" },
+        { type: "update_score", delta: 15 },
+        { type: "update_metadata", key: "offer_interest", value: "無料相談" },
         { type: "start_survey", surveyId },
       ],
     },
     {
       id: "trg_demo_consult",
       name: "相談キーワード",
+      type: "dm",
+      matchType: "partial",
+      keywords: ["相談", "詳細"],
+      fireMode: "unlimited",
+      actions: [
+        { type: "enroll_scenario", scenarioId: "scn_demo_consult" },
+        { type: "send_template", templateId: "tpl_demo_consult" },
+      ],
+    },
+    {
+      id: "trg_demo_consult_comment",
+      name: "相談コメントキーワード",
       type: "comment",
       matchType: "partial",
       keywords: ["相談", "詳細"],
@@ -593,6 +921,39 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       actions: [
         { type: "enroll_scenario", scenarioId: "scn_demo_consult" },
         { type: "send_template", templateId: "tpl_demo_consult" },
+      ],
+    },
+    {
+      id: "trg_demo_reservation",
+      name: "無料相談予約キーワード",
+      type: "dm",
+      matchType: "partial",
+      keywords: ["予約"],
+      fireMode: "unlimited",
+      actions: [
+        { type: "add_tag", tagId: "tag_consult" },
+        { type: "update_score", delta: 10 },
+        { type: "update_metadata", key: "consult_status", value: "予約希望" },
+        { type: "send_template", templateId: "tpl_demo_reservation_confirm" },
+      ],
+    },
+    {
+      id: "trg_demo_reservation_schedule",
+      name: "無料相談希望日程受付",
+      type: "dm",
+      matchType: "regex",
+      keywords: [
+        "\\d{1,2}[/-]\\d{1,2}",
+        "\\d{1,2}月\\d{1,2}日",
+        "\\d{1,2}:\\d{2}",
+        "\\d{1,2}時",
+        "来週|今週|明日|明後日",
+      ],
+      fireMode: "once",
+      actions: [
+        { type: "update_metadata", key: "consult_status", value: "日程受領" },
+        { type: "send_template", templateId: "tpl_demo_reservation_received" },
+        { type: "send_template", templateId: "tpl_demo_reservation_closing" },
       ],
     },
     {
@@ -607,13 +968,34 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
         { type: "add_tag", tagId: "tag_campaign" },
       ],
     },
+    {
+      id: "trg_demo_follower_branch",
+      name: "フォロワー条件パッケージデモ",
+      type: "dm",
+      matchType: "partial",
+      keywords: ["フォロー特典", "限定特典"],
+      fireMode: "unlimited",
+      actions: [
+        { type: "send_template", templateId: "pkg_demo_entry" },
+      ],
+    },
   ];
   for (const trigger of triggers) {
     await run(
       db,
-      `INSERT OR IGNORE INTO triggers
+      `INSERT INTO triggers
        (id, account_id, name, trigger_type, match_type, keywords, actions, schedule_config, fire_mode, is_active, version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 1, 1, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 1, 1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         trigger_type = excluded.trigger_type,
+         match_type = excluded.match_type,
+         keywords = excluded.keywords,
+         actions = excluded.actions,
+         schedule_config = excluded.schedule_config,
+         fire_mode = excluded.fire_mode,
+         is_active = excluded.is_active,
+         updated_at = excluded.updated_at`,
       trigger.id,
       accountId,
       trigger.name,
@@ -820,6 +1202,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       dispatch.recipientId,
       dispatch.kind,
       dispatch.payload,
+      dispatch.status,
       now - (3 * hour) - 60,
       now - (3 * hour),
       now - (3 * hour) - 60,

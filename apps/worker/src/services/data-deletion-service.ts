@@ -9,6 +9,7 @@ export interface DataDeletionDeps {
   kv: KVNamespace;
   r2: R2Bucket;
   appSecret: string;
+  baseUrl: string;
 }
 
 export interface DeletionCallbackResponse {
@@ -86,7 +87,7 @@ async function verifyHmacSignature(
 // ────────── Factory ──────────
 
 export function createDataDeletionService(deps: DataDeletionDeps): DataDeletionService {
-  const { db, kv, r2, appSecret } = deps;
+  const { db, kv, r2, appSecret, baseUrl } = deps;
 
   return {
     async verifyAndProcessCallback(body, signatureHeader) {
@@ -174,7 +175,7 @@ export function createDataDeletionService(deps: DataDeletionDeps): DataDeletionS
       }
 
       return ok({
-        url: `https://gramstep.example.com/deletion?confirmation_code=${confirmationCode}`,
+        url: `${baseUrl}/deletion?confirmation_code=${encodeURIComponent(confirmationCode)}`,
         confirmation_code: confirmationCode,
       });
     },

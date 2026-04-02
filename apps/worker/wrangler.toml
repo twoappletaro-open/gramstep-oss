@@ -9,11 +9,11 @@ META_API_VERSION = "v25.0"
 [[d1_databases]]
 binding = "DB"
 database_name = "gramstep"
-database_id = "<YOUR_DB_ID>"
+database_id = "your_d1_database_id"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "<YOUR_KV_ID>"
+id = "your_kv_namespace_id"
 
 [[queues.producers]]
 binding = "SEND_QUEUE"
@@ -31,18 +31,15 @@ queue = "gramstep-dlq"
 
 [[r2_buckets]]
 binding = "R2"
-bucket_name = "gramstep-storage"
+bucket_name = "your_r2_bucket_name"
 
 [[workflows]]
 binding = "DRIP_WORKFLOW"
-name = "gramstep-drip-workflow"
+name = "your_drip_workflow_name"
 class_name = "DripWorkflow"
 
 [triggers]
 crons = [
   "*/5 * * * *",
-  "0 3 * * *",
-  "0 4 * * *",
-  "*/15 * * * *",
-  "0 5 * * *"
+  "0 3 * * *"
 ]
