@@ -1069,7 +1069,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       keywords: [
         "^(?!.*(?:デモ|初回DM|初回デモ|アンケート|資料|チェックリスト|導線チェック|配信設計|導線設計|相談|詳細|予約|抽選|キャンペーン|フォロー特典|限定特典|来週|今週|明日|明後日|\\d{1,2}[/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日|\\d{1,2}:\\d{2}|\\d{1,2}時)).+$",
       ],
-      fireMode: "unlimited",
+      fireMode: "first_only",
       actions: [
         { type: "send_template", templateId: "tpl_demo_default_fallback" },
       ],
