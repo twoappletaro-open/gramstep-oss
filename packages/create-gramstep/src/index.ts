@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { resolve, join } from "node:path";
+import { existsSync, readdirSync, mkdirSync } from "node:fs";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { loadState, saveState, deleteState, isDone, markDone } from "./lib/state.js";
@@ -17,6 +18,8 @@ import { connectInstagram } from "./steps/connect-instagram.js";
 import { showSummary } from "./steps/summary.js";
 
 type StepFn = (state: SetupState, dir: string) => Promise<void>;
+
+const PUBLIC_REPO_URL = "https://github.com/twoappletaro-open/gramstep-oss.git";
 
 const STEPS: ReadonlyArray<{ id: string; name: string; fn: StepFn }> = [
   { id: "check-deps", name: "環境チェック", fn: (_s, _d) => checkDeps() },
@@ -58,6 +61,7 @@ function showHelp(): void {
 ${pc.bold("create-gramstep")} - GramStep ワンコマンドセットアップ
 
 ${pc.bold("使い方:")}
+  npx create-gramstep            空ディレクトリならGramStep本体を取得してセットアップ
   npx create-gramstep setup      初回セットアップ（Cloudflareにデプロイ）
   npx create-gramstep setup --fresh  状態をリセットして最初からセットアップ
   npx create-gramstep redeploy   コード更新のみ再デプロイ（リソース再作成なし）
@@ -71,7 +75,7 @@ async function setup(fresh: boolean): Promise<void> {
   p.log.info("Cloudflare無料枠にGramStepをデプロイします。");
   p.log.info("中断しても再実行で途中から再開できます。\n");
 
-  const projectDir = findProjectRoot();
+  const projectDir = ensureProjectRoot();
 
   if (fresh) {
     deleteState(projectDir);
@@ -136,7 +140,7 @@ async function redeploy(): Promise<void> {
   p.intro(pc.bgYellow(pc.black(" GramStep Redeploy ")));
   p.log.info("Workerコードのみ再デプロイします（リソース再作成・Secrets再生成なし）。\n");
 
-  const projectDir = findProjectRoot();
+  const projectDir = ensureProjectRoot();
   const state = loadState(projectDir);
 
   if (!state.d1DatabaseId || !state.kvNamespaceId || !state.workerName) {
@@ -152,14 +156,59 @@ async function redeploy(): Promise<void> {
 }
 
 /** Find project root (look for pnpm-workspace.yaml or apps/worker) */
-function findProjectRoot(): string {
+function findProjectRoot(): string | null {
   let dir = process.cwd();
   for (let i = 0; i < 10; i++) {
     if (existsSync(resolve(dir, "pnpm-workspace.yaml"))) return dir;
     if (existsSync(resolve(dir, "apps", "worker"))) return dir;
     dir = resolve(dir, "..");
   }
-  return process.cwd();
+  return null;
+}
+
+function ensureProjectRoot(): string {
+  const existingRoot = findProjectRoot();
+  if (existingRoot) return existingRoot;
+
+  const cwd = process.cwd();
+  const cwdEntries = existsSync(cwd) ? readdirSync(cwd) : [];
+  const targetDir = cwdEntries.length === 0 ? cwd : join(cwd, "gramstep");
+
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  const targetEntries = readdirSync(targetDir);
+  if (targetEntries.length > 0) {
+    throw new Error(
+      `GramStep のソースが見つかりません。空のディレクトリで実行するか、既存の GramStep リポジトリ直下で実行してください: ${targetDir}`,
+    );
+  }
+
+  p.log.step(pc.bold("GramStep ソース取得"));
+  p.log.info(`公開リポジトリを取得中: ${pc.cyan(PUBLIC_REPO_URL)}`);
+
+  try {
+    execFileSync("git", ["clone", "--depth=1", PUBLIC_REPO_URL, targetDir], {
+      stdio: "inherit",
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    throw new Error(`公開リポジトリの取得に失敗しました。git が使える状態か確認してください: ${message}`);
+  }
+
+  try {
+    execFileSync("pnpm", ["install"], {
+      cwd: targetDir,
+      stdio: "inherit",
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    throw new Error(`依存関係のインストールに失敗しました。${targetDir} で pnpm install を確認してください: ${message}`);
+  }
+
+  p.log.success(`GramStep ソース取得完了: ${pc.cyan(targetDir)}`);
+  return targetDir;
 }
 
 main().catch((e) => {

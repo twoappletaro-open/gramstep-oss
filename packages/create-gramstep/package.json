@@ -1,6 +1,6 @@
 {
   "name": "create-gramstep",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "GramStep ワンコマンドセットアップCLI",
   "license": "MIT",
   "type": "module",
