@@ -155,12 +155,15 @@ async function redeploy(): Promise<void> {
   p.outro(pc.green("done!"));
 }
 
+function isProjectRoot(dir: string): boolean {
+  return existsSync(resolve(dir, "pnpm-workspace.yaml")) || existsSync(resolve(dir, "apps", "worker"));
+}
+
 /** Find project root (look for pnpm-workspace.yaml or apps/worker) */
-function findProjectRoot(): string | null {
-  let dir = process.cwd();
+function findProjectRoot(startDir = process.cwd()): string | null {
+  let dir = startDir;
   for (let i = 0; i < 10; i++) {
-    if (existsSync(resolve(dir, "pnpm-workspace.yaml"))) return dir;
-    if (existsSync(resolve(dir, "apps", "worker"))) return dir;
+    if (isProjectRoot(dir)) return dir;
     dir = resolve(dir, "..");
   }
   return null;
@@ -177,6 +180,9 @@ function ensureProjectRoot(): string {
   if (!existsSync(targetDir)) {
     mkdirSync(targetDir, { recursive: true });
   }
+
+  const nestedRoot = findProjectRoot(targetDir);
+  if (nestedRoot) return nestedRoot;
 
   const targetEntries = readdirSync(targetDir);
   if (targetEntries.length > 0) {
