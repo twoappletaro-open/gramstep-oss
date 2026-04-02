@@ -464,19 +464,18 @@ curl -X POST https://<your-worker>.workers.dev/api/auth/manual-token \
 
 `完了` ステップのサマリーでは、外部提供や本番運用向けの追加設定が表示されます。
 
-### 追加Step 1: ビジネスログインを設定（OAuth）
+補足:
+- OAuth リダイレクトURIの設定は Step 9 で実施済みです
+- 完了サマリーでは、その後に必要な設定と申請内容を再掲します
 
-ユースケース → カスタマイズ → 「Instagramビジネスログインを設定」：
-- OAuth リダイレクトURI: `https://<your-worker>.workers.dev/api/auth/callback`
-
-### 追加Step 2: 基本設定を完成させる
+### 追加Step 1: 基本設定を完成させる
 
 設定 → 基本：
 - プライバシーポリシーURL: `https://<your-worker>.workers.dev/privacy-policy`（自動生成済み）
 - データの削除手順URL: `https://<your-worker>.workers.dev/api/data-deletion`
 - 連絡先メールアドレス
 
-### 追加Step 3: App Review申請
+### 追加Step 2: App Review申請
 
 権限の用途説明テキスト（コピペ用）は CLI 完了時に一部表示されます。
 
