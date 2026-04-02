@@ -49,15 +49,16 @@ export async function connectInstagram(state: SetupState, _projectDir: string): 
   });
   if (p.isCancel(webhookDone)) throw new SetupError("ユーザーがキャンセルしました");
 
-  // --- 5. App Review ---
-  p.log.step(pc.bold("アプリレビュー"));
-  p.log.info("ダッシュボード → " + pc.yellow("「アプリレビュー」") + " へ移動してください。");
-  p.log.info(pc.dim("※ 詳しい申請手順はセットアップ完了後のサマリーに表示されます。"));
-  const reviewDone = await p.confirm({
-    message: "アプリレビューのページを確認しましたか？",
+  // --- 5. Publish readiness ---
+  p.log.step(pc.bold("Meta側の公開状態を確認"));
+  p.log.info("Meta Developers ダッシュボードで、対象ユースケースの " + pc.yellow("「ユースケースをテストする」") + " にチェックが入っているか確認してください。");
+  p.log.info("その後、アプリ全体を " + pc.yellow("公開") + " してください。");
+  p.log.info(pc.dim("※ 公開されていないと、Webhookのテスト送信は通っても実際のDMが届かないことがあります。"));
+  const publishReadyDone = await p.confirm({
+    message: "ユースケースのテスト完了とアプリ公開を確認しましたか？",
     initialValue: true,
   });
-  if (p.isCancel(reviewDone)) throw new SetupError("ユーザーがキャンセルしました");
+  if (p.isCancel(publishReadyDone)) throw new SetupError("ユーザーがキャンセルしました");
 
   p.log.success("Meta Console の基本設定が完了しました。");
 }

@@ -38,21 +38,10 @@ ${pc.bold("追加Step 1: 基本設定を完成させる")}
   - データの削除手順URL: ${pc.cyan(state.workerUrl + "/api/data-deletion")}
   - 連絡先メールアドレス
 
-${pc.bold("追加Step 2: App Review申請")}
-  ダッシュボード → ${pc.yellow("「アプリレビュー」")}
-
-  ${pc.yellow("申請する権限の用途説明（コピペ用）:")}
-
-  ${pc.bold("instagram_business_manage_messages:")}
-    GramStepはInstagram Messaging APIを使用したCRMツールです。
-    ユーザーからのDM受信をWebhookで検知し、事前設定したシナリオに基づいて
-    自動応答メッセージを送信します。管理者は管理画面から1:1チャットで
-    ユーザーに手動返信します。24時間メッセージングウィンドウを管理し、
-    Instagram APIの制約に準拠した配信制御を行います。
-
-  スクリーンキャスト動画が必要です:
-    Mac: ${pc.dim("Cmd+Shift+5")} で画面録画
-    操作: ログイン → シナリオ作成 → トリガー設定 → DM送受信デモ
+${pc.bold("追加Step 2: Meta側の公開状態を確認")}
+  - 対象ユースケースで ${pc.yellow("「ユースケースをテストする」")} にチェックが入っていること
+  - ダッシュボード上でアプリ全体を ${pc.yellow("公開")} にしたこと
+  - 実DMが届かない場合は、Webhookテスト送信だけでなく実際のDM受信でも確認すること
 
 ${pc.green("=========================================")}
 ${pc.dim("管理画面: " + (state.adminUrl || "未デプロイ"))}

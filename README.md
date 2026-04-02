@@ -454,10 +454,11 @@ curl -X POST https://<your-worker>.workers.dev/api/auth/manual-token \
 
 ### Step 10: アプリレビューのページを確認
 
-ダッシュボード → 「アプリレビュー」へ移動
+Meta Developers ダッシュボードで、対象ユースケースの「ユースケースをテストする」にチェックが入っていることを確認する
 
 補足:
-- このステップでは「詳しい申請手順はセットアップ完了後のサマリーに表示される」と案内されます
+- その後、アプリ全体を公開する
+- Webhookテスト送信が通っていても、アプリが未公開だと実際のDMが届かないことがあります
 - Privacy Policy URL やデータ削除URLは、完了後のサマリーにも再掲されます
 
 ### セットアップ完了後にCLIが表示する内容
@@ -475,16 +476,11 @@ curl -X POST https://<your-worker>.workers.dev/api/auth/manual-token \
 - データの削除手順URL: `https://<your-worker>.workers.dev/api/data-deletion`
 - 連絡先メールアドレス
 
-### 追加Step 2: App Review申請
+### 追加Step 2: Meta側の公開状態を確認
 
-権限の用途説明テキスト（コピペ用）は CLI 完了時に一部表示されます。
-
-- 必須:
-  - `instagram_business_manage_messages`
-
-補足:
-- 完了時サマリーで用途説明文が出るのは現状 `instagram_business_manage_messages` のみです
-- `HUMAN_AGENT` は README 上の補足としては必要ですが、CLI 完了時サマリーには現状含まれていません
+- 対象ユースケースで「ユースケースをテストする」にチェックが入っていること
+- アプリ全体を公開したこと
+- Webhookテスト送信だけでなく、実際の別アカウントDMでも疎通確認すること
 
 <a id="limitations"></a>
 ## 制約
