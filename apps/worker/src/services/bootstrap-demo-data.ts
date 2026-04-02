@@ -1,5 +1,6 @@
 interface BootstrapDemoInput {
   db: D1Database;
+  r2: R2Bucket;
   accountId: string;
   operatorId: string;
   workerOrigin: string;
@@ -27,19 +28,89 @@ function json(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function inferContentType(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  return "application/octet-stream";
+}
+
+async function mirrorDemoAssetToR2(input: {
+  r2: R2Bucket;
+  accountId: string;
+  workerOrigin: string;
+  sourceUrl: string;
+  targetFilename: string;
+}): Promise<string> {
+  const response = await fetch(input.sourceUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch demo asset: ${input.sourceUrl} (${response.status})`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  const r2Key = `media/${input.accountId}/send/${input.targetFilename}`;
+  await input.r2.put(r2Key, buffer, {
+    httpMetadata: {
+      contentType: response.headers.get("content-type") ?? inferContentType(input.targetFilename),
+    },
+  });
+
+  return `${input.workerOrigin}/api/media/${r2Key}`;
+}
+
 export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedSummary> {
-  const { db, accountId, operatorId, workerOrigin, dashboardUrl, now } = input;
+  const { db, r2, accountId, operatorId, workerOrigin, dashboardUrl, now } = input;
   const hour = 3600;
   const day = 86400;
   const demoAssetVersion = "20260402-12";
   const normalizedDashboardUrl = dashboardUrl.replace(/\/$/, "");
   const demoStaticImageBaseUrl = `${normalizedDashboardUrl}/demo`;
-  const demoStaticImageUrl = (slug: string, ext = "png") =>
+  const demoStaticImageSourceUrl = (slug: string, ext = "png") =>
     `${demoStaticImageBaseUrl}/${slug}.${ext}?v=${demoAssetVersion}`;
   const demoAdminUrl = `${normalizedDashboardUrl}/ja`;
-  const demoFirstDmImageUrl = `${normalizedDashboardUrl}/demo/initial-demo-dm-v3.jpg?v=${demoAssetVersion}`;
-  const demoSurveyImageUrl = `${normalizedDashboardUrl}/demo/initial-demo-survey.png?v=${demoAssetVersion}`;
-  const demoBookingImageUrl = `${normalizedDashboardUrl}/demo/initial-demo-booking.png?v=${demoAssetVersion}`;
+  const demoAssetUrls = await (async () => {
+    const assetSpecs = [
+      {
+        key: "hero",
+        sourceUrl: demoStaticImageSourceUrl("initial-demo-hero"),
+        targetFilename: `demo-initial-demo-hero-${demoAssetVersion}.png`,
+      },
+      {
+        key: "firstDm",
+        sourceUrl: `${normalizedDashboardUrl}/demo/initial-demo-dm-v3.jpg?v=${demoAssetVersion}`,
+        targetFilename: `demo-initial-demo-dm-v3-${demoAssetVersion}.jpg`,
+      },
+      {
+        key: "survey",
+        sourceUrl: `${normalizedDashboardUrl}/demo/initial-demo-survey.png?v=${demoAssetVersion}`,
+        targetFilename: `demo-initial-demo-survey-${demoAssetVersion}.png`,
+      },
+      {
+        key: "booking",
+        sourceUrl: `${normalizedDashboardUrl}/demo/initial-demo-booking.png?v=${demoAssetVersion}`,
+        targetFilename: `demo-initial-demo-booking-${demoAssetVersion}.png`,
+      },
+    ] as const;
+
+    const results = await Promise.all(assetSpecs.map(async (asset) => {
+      try {
+        const url = await mirrorDemoAssetToR2({
+          r2,
+          accountId,
+          workerOrigin,
+          sourceUrl: asset.sourceUrl,
+          targetFilename: asset.targetFilename,
+        });
+        return [asset.key, url] as const;
+      } catch {
+        return [asset.key, asset.sourceUrl] as const;
+      }
+    }));
+
+    return Object.fromEntries(results) as Record<(typeof assetSpecs)[number]["key"], string>;
+  })();
 
   const settings = {
     delivery_window_start: 9,
@@ -270,7 +341,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
           {
             title: "デモはここまでです",
             subtitle: "GitHub から GramStep OSS を始められます。",
-            image_url: demoStaticImageUrl("initial-demo-hero"),
+            image_url: demoAssetUrls.hero,
             default_action: {
               type: "web_url",
               url: "https://twoappletaro-open.github.io/gramstep-oss/",
@@ -491,7 +562,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
               {
                 title: "gramstep 初回DMデモ",
                 subtitle: "{{display_name}}さん向けに、初回DMから予約導線までを3分で体験できます。",
-                image_url: demoStaticImageUrl("initial-demo-hero"),
+                image_url: demoAssetUrls.hero,
                 default_action: { type: "web_url", url: demoAdminUrl },
                 buttons: [],
               },
@@ -518,7 +589,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
               {
                 title: "初回DM",
                 subtitle: "第一印象で興味を作り、会話を始める",
-                image_url: demoFirstDmImageUrl,
+                image_url: demoAssetUrls.firstDm,
                 default_action: { type: "web_url", url: demoAdminUrl },
                 buttons: [
                   { type: "postback", title: "デモを再開", payload: "デモ" },
@@ -527,7 +598,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
               {
                 title: "アンケート",
                 subtitle: "回答内容でタグと温度感を取得する",
-                image_url: demoSurveyImageUrl,
+                image_url: demoAssetUrls.survey,
                 default_action: { type: "web_url", url: demoAdminUrl },
                 buttons: [
                   { type: "postback", title: "無料診断", payload: "START_MARKETING_SURVEY" },
@@ -536,7 +607,7 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
               {
                 title: "予約導線",
                 subtitle: "希望日程の回収まで自然につなぐ",
-                image_url: demoBookingImageUrl,
+                image_url: demoAssetUrls.booking,
                 default_action: { type: "web_url", url: demoAdminUrl },
                 buttons: [
                   { type: "postback", title: "相談予約", payload: "予約" },

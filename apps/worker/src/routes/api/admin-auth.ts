@@ -274,6 +274,7 @@ adminAuthRoutes.post("/dev-seed", async (c) => {
 
     const demoSeed = await seedDemoData({
       db: c.env.DB,
+      r2: c.env.R2,
       accountId: "acc_default",
       operatorId: id,
       workerOrigin,
