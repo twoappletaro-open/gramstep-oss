@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GramStep | Instagram DM automation CRM</title>
+    <meta
+      name="description"
+      content="Instagram DM自動化をセルフホストできるオープンソースCRM。Cloudflare Workers上で低コスト運用できるGramStepのランディングページ。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="#top">
+          <span class="brand-mark">
+            <img src="./assets/gramstep_logo.png" alt="GramStep logo" />
+          </span>
+          <span class="brand-copy">
+            <strong>GramStep</strong>
+            <span>Instagram DM automation CRM</span>
+          </span>
+        </a>
+        <nav class="site-nav">
+          <a href="#comparison">比較</a>
+          <a href="#features">機能</a>
+          <a href="#demo">デモ</a>
+          <a href="#setup">導入</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <div class="nav-actions">
+          <a class="ghost-button" href="https://github.com/twoappletaro-open/gramstep-oss">GitHub</a>
+          <a class="primary-button" href="https://github.com/twoappletaro-open/gramstep-oss#quick-start">はじめる</a>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="hero">
+          <div class="hero-copy">
+            <div class="hero-logo">
+              <img src="./assets/gramstep_logo.png" alt="GramStep logo" />
+            </div>
+            <p class="eyebrow">Open-source Instagram CRM</p>
+            <h1>
+              Instagram DM運用を、
+              <span>ベンダー依存なし</span>
+              で持てるように。
+            </h1>
+            <p class="hero-lead">
+              GramStepは、Instagram DMの自動返信、ステップ配信、セグメント管理、
+              分析、1:1チャットをCloudflare上でセルフホストできるオープンソースCRMです。
+            </p>
+            <div class="hero-actions">
+              <a class="primary-button" href="https://github.com/twoappletaro-open/gramstep-oss">リポジトリを見る</a>
+              <a class="secondary-button" href="#demo">デモを試す</a>
+            </div>
+            <ul class="hero-points">
+              <li>Cloudflare無料枠から開始可能</li>
+              <li>コードもデータも自社管理</li>
+              <li>MITライセンス</li>
+            </ul>
+          </div>
+
+          <div class="hero-stage">
+            <div class="hero-card hero-card-main">
+              <div class="card-kicker">Dashboard Snapshot</div>
+              <h2>DM自動化、配信、分析を1つの運用面に集約</h2>
+              <div class="stat-grid">
+                <article>
+                  <span class="stat-value">24/7</span>
+                  <span class="stat-label">自動返信</span>
+                </article>
+                <article>
+                  <span class="stat-value">D1</span>
+                  <span class="stat-label">CRMデータ</span>
+                </article>
+                <article>
+                  <span class="stat-value">Queue</span>
+                  <span class="stat-label">非同期送信</span>
+                </article>
+                <article>
+                  <span class="stat-value">MIT</span>
+                  <span class="stat-label">商用利用可</span>
+                </article>
+              </div>
+            </div>
+            <div class="hero-card hero-card-side">
+              <div class="mini-panel">
+                <span class="mini-title">Scenario</span>
+                <strong>Welcome flow</strong>
+                <p>キーワード起点で配信開始。タグ付けと分岐を自動実行。</p>
+              </div>
+              <div class="mini-panel">
+                <span class="mini-title">Segmentation</span>
+                <strong>High Intent Users</strong>
+                <p>スコア・タグ・プロフィール属性でターゲティング。</p>
+              </div>
+              <div class="mini-panel">
+                <span class="mini-title">Ops</span>
+                <strong>Webhook + OAuth</strong>
+                <p>Meta設定に必要な URL と secrets を CLI で案内。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="ticker-band">
+          <div>Cloudflare Workers</div>
+          <div>D1</div>
+          <div>KV</div>
+          <div>R2</div>
+          <div>Queues</div>
+          <div>Workflows</div>
+          <div>Next.js</div>
+          <div>Instagram Graph API</div>
+        </section>
+
+        <section class="section manifesto">
+          <div class="section-heading">
+            <p class="eyebrow">Manifesto</p>
+            <h2>Instagram DM運用を、SaaSの都合から引き戻す。</h2>
+            <p>
+              ベンダーの管理画面に合わせて運用を曲げるのではなく、自社の運用に合わせてプロダクトを持つ。
+              GramStep はそのための土台です。安さだけではなく、コードとデータの主導権を取り戻すことが目的です。
+            </p>
+          </div>
+        </section>
+
+        <section class="section demo" id="demo">
+          <div class="section-heading">
+            <p class="eyebrow">Live Demo</p>
+            <h2>ここからデモを試せます。</h2>
+            <p>
+              実際の動きを見るには、Instagram のデモアカウントへ DM を送ってください。
+              自動返信やシナリオ配信の入口をそのまま確認できます。
+            </p>
+          </div>
+          <div class="demo-card">
+            <div class="demo-copy">
+              <span class="demo-label">Instagram Demo Account</span>
+              <h3>@gramstepopen</h3>
+              <p>DMで「デモ」と送ってみてください。キーワードに応じた自動応答やデモ導線を確認できます。</p>
+            </div>
+            <div class="demo-actions">
+              <a class="primary-button" href="https://www.instagram.com/gramstepopen/">Instagramで開く</a>
+              <a class="secondary-button" href="https://www.instagram.com/gramstepopen/">デモアカウントを見る</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="section section-comparison" id="comparison">
+          <div class="section-heading">
+            <p class="eyebrow">Comparison</p>
+            <h2>なぜ GramStep なのか</h2>
+            <p>
+              一般的なSaaS型DMツールで不足しやすい「コード公開」「データ所有」「API拡張」を、
+              最初から自社側に残せる構成です。
+            </p>
+          </div>
+
+          <div class="comparison-table-wrap">
+            <table class="comparison-table">
+              <thead>
+                <tr>
+                  <th>項目</th>
+                  <th>一般的なDM SaaS</th>
+                  <th>GramStep</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>ソースコード</td>
+                  <td>非公開</td>
+                  <td>MIT</td>
+                </tr>
+                <tr>
+                  <td>データ保管</td>
+                  <td>ベンダー依存</td>
+                  <td>自社Cloudflare環境</td>
+                </tr>
+                <tr>
+                  <td>初期構築</td>
+                  <td>速い</td>
+                  <td>やや重い</td>
+                </tr>
+                <tr>
+                  <td>運用自由度</td>
+                  <td>中</td>
+                  <td>高</td>
+                </tr>
+                <tr>
+                  <td>API拡張</td>
+                  <td>制限されがち</td>
+                  <td>自前で追加可能</td>
+                </tr>
+                <tr>
+                  <td>自動化ロジック</td>
+                  <td>UI依存</td>
+                  <td>Worker側で拡張可能</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section problem-solution">
+          <div class="section-heading">
+            <p class="eyebrow">Problem</p>
+            <h2>Instagram DM運用、こうなりがちです</h2>
+          </div>
+          <div class="problem-grid">
+            <article class="issue-card">
+              <h3>ツール依存が強い</h3>
+              <p>データ構造も配信ロジックもSaaS都合に閉じていて、細かい運用改善が重い。</p>
+            </article>
+            <article class="issue-card">
+              <h3>Meta設定が属人化しやすい</h3>
+              <p>Webhook、OAuth、App Review のどこで何を入れるべきかが散らばりやすい。</p>
+            </article>
+            <article class="issue-card">
+              <h3>AI連携しにくい</h3>
+              <p>非公開APIや制限の強いUI中心設計だと、Claude Code や自前の自動化に繋ぎづらい。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section features" id="features">
+          <div class="section-heading">
+            <p class="eyebrow">Features</p>
+            <h2>管理画面だけで終わらない、運用基盤としての機能</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>DM自動返信</h3>
+              <p>キーワード、全DM、Ice Breaker、コメント起点で自動応答。</p>
+            </article>
+            <article class="feature-card">
+              <h3>シナリオ / ステップ配信</h3>
+              <p>時間差配信、条件分岐、タグ付け、スコア更新をまとめて実行。</p>
+            </article>
+            <article class="feature-card">
+              <h3>CRM / セグメント</h3>
+              <p>タグ、スコア、プロフィール、メタデータをベースに配信対象を整理。</p>
+            </article>
+            <article class="feature-card">
+              <h3>1:1チャット</h3>
+              <p>HUMAN_AGENT ウィンドウ内で手動返信。オペレーション画面も統合。</p>
+            </article>
+            <article class="feature-card">
+              <h3>配信分析</h3>
+              <p>送信数、既読率、クリック率、CV、アカウントヘルスを追跡。</p>
+            </article>
+            <article class="feature-card">
+              <h3>CLI セットアップ</h3>
+              <p>Cloudflare リソース作成、Secrets設定、Meta設定導線を段階的に案内。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section architecture">
+          <div class="section-heading">
+            <p class="eyebrow">Architecture</p>
+            <h2>Cloudflareを前提に、薄く強く構成する</h2>
+          </div>
+          <div class="architecture-shell">
+            <div class="flow-card">Instagram Webhook</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-card">Worker API / Queue Consumer</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-card">DM送信 / Automation</div>
+          </div>
+          <div class="stack-grid">
+            <article><span>Backend</span><strong>Hono + Cloudflare Workers</strong></article>
+            <article><span>Frontend</span><strong>Next.js 15</strong></article>
+            <article><span>Database</span><strong>D1 (SQLite)</strong></article>
+            <article><span>Async</span><strong>Queues + Workflows</strong></article>
+            <article><span>Storage</span><strong>R2 + KV</strong></article>
+            <article><span>OSS</span><strong>MIT License</strong></article>
+          </div>
+        </section>
+
+        <section class="section setup" id="setup">
+          <div class="section-heading">
+            <p class="eyebrow">Setup</p>
+            <h2>導入は重い。でも、何をやるべきかは明示する</h2>
+          </div>
+          <div class="setup-steps">
+            <article>
+              <span>1</span>
+              <h3>Cloudflare リソース作成</h3>
+              <p>D1, KV, R2, Queues, Workflows を CLI で順に作成します。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <h3>Worker / Admin をデプロイ</h3>
+              <p>Worker URL、Admin URL、必要な Secrets を生成して投入します。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <h3>Meta 設定を進める</h3>
+              <p>App ID / Secret、アクセストークン登録、Webhook、OAuth まで段階的に案内します。</p>
+            </article>
+            <article>
+              <span>4</span>
+              <h3>本番運用へ寄せる</h3>
+              <p>Privacy Policy、Data Deletion、App Review を仕上げて外部提供へ進みます。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section open-source">
+          <div class="section-heading">
+            <p class="eyebrow">Open Source</p>
+            <h2>コードも運用知識も閉じない</h2>
+          </div>
+          <div class="open-source-grid">
+            <div class="oss-panel">
+              <h3>従来のSaaS</h3>
+              <ul>
+                <li>毎月の利用料が積み上がる</li>
+                <li>改善速度と仕様変更が他社依存</li>
+                <li>データ構造やAPIの自由度が低い</li>
+                <li>終了リスクを自分で制御しにくい</li>
+              </ul>
+            </div>
+            <div class="oss-panel accent">
+              <h3>GramStep</h3>
+              <ul>
+                <li>MITライセンスで商用利用可</li>
+                <li>コードもデータも自社で保持</li>
+                <li>必要な処理を Worker 側へ拡張可能</li>
+                <li>Issue / PR / fork 前提で改善できる</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section faq" id="faq">
+          <div class="section-heading">
+            <p class="eyebrow">FAQ</p>
+            <h2>よくある質問</h2>
+          </div>
+          <div class="faq-list">
+            <details open>
+              <summary>本当に無料ですか？</summary>
+              <p>GramStep 自体は MIT ライセンスです。Cloudflare 側の使用量によっては有料化が必要ですが、それは Cloudflare への支払いです。</p>
+            </details>
+            <details>
+              <summary>エンジニアでなくても運用できますか？</summary>
+              <p>管理画面運用は可能ですが、初期セットアップと Meta 設定は技術理解があるチームの方が安全です。</p>
+            </details>
+            <details>
+              <summary>既存のSaaSから移行できますか？</summary>
+              <p>できます。ただし配信ロジック、タグ設計、審査フロー、Meta 権限まわりは自社側で再整理が必要です。</p>
+            </details>
+            <details>
+              <summary>どこから始めればいいですか？</summary>
+              <p>まずは GitHub の README と Quick Start を読み、Cloudflare と Meta のアカウントを準備してください。</p>
+            </details>
+          </div>
+        </section>
+
+        <section class="section final-cta">
+          <div class="cta-card">
+            <p class="eyebrow">Start Building</p>
+            <h2>まずは構成を掴んで、必要な部分だけ自分のものにする。</h2>
+            <p>
+              GramStep は「導入した瞬間に全部終わる」タイプのツールではありません。
+              その代わり、Meta 設定、配信ロジック、運用フローを自社基準で積み上げられます。
+            </p>
+            <div class="hero-actions">
+              <a class="primary-button" href="https://github.com/twoappletaro-open/gramstep-oss">GitHub Repo</a>
+              <a class="secondary-button" href="https://github.com/twoappletaro-open/gramstep-oss#meta-developers-console-%E3%81%AE%E8%A8%AD%E5%AE%9A">Meta 設定を見る</a>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+  </html>

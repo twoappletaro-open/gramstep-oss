@@ -8,6 +8,7 @@ coverage/
 *.tsbuildinfo
 .env
 .env.*
+!.env.example
 .dev.vars
 .gramstep-setup.json
 .instadrip-setup.json
