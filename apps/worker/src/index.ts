@@ -21,6 +21,7 @@ import { dataDeletionRoutes } from "./routes/api/data-deletion.js";
 import { gdprRoutes } from "./routes/api/gdpr.js";
 import { appReviewRoutes } from "./routes/api/app-review.js";
 import { templateRoutes } from "./routes/api/templates.js";
+import { packageRoutes } from "./routes/api/packages.js";
 import { broadcastRoutes } from "./routes/api/broadcasts.js";
 import { notificationRoutes } from "./routes/api/notifications.js";
 import { accountRoutes } from "./routes/api/accounts.js";
@@ -42,14 +43,14 @@ import { settingsRoutes } from "./routes/api/settings.js";
 import { appConfigRoutes } from "./routes/api/app-config.js";
 import { manualTokenRoutes } from "./routes/api/manual-token.js";
 import { surveyRoutes } from "./routes/api/surveys.js";
+import { variableRoutes } from "./routes/api/variables.js";
 import { docsRoute } from "./routes/docs.js";
 import type { SendQueueMessage } from "@gramstep/shared";
 import { createDeliveryEngine } from "./services/delivery-engine.js";
 import { createRateLimiter } from "./services/rate-limiter.js";
 import { createWindowManager } from "./services/window-manager.js";
 import { createRealInstagramClient } from "@gramstep/ig-sdk";
-import { getDecryptedToken, type AuthServiceDeps } from "./services/auth-service.js";
-import { generateAppSecretProof } from "./services/crypto.js";
+import { getResolvedAppContext } from "./services/app-failover.js";
 import { handleHealthAndReengagement } from "./cron/health-and-reengagement.js";
 import { handleTokenRefresh } from "./cron/token-refresh.js";
 import { handleAuditLogPurge } from "./cron/audit-log-purge.js";
@@ -83,7 +84,9 @@ app.use("/api/settings/*", requireAuth());
 app.use("/api/app-config", requireAuth());
 app.use("/api/gdpr/*", requireAuth());
 app.use("/api/templates/*", requireAuth());
+app.use("/api/packages/*", requireAuth());
 app.use("/api/surveys/*", requireAuth());
+app.use("/api/variables/*", requireAuth());
 app.use("/api/app-review/*", requireAuth());
 app.use("/api/campaigns/*", requireAuth());
 app.use("/api/campaigns/:id/*", requireAuth());
@@ -103,12 +106,14 @@ app.use("/api/api-keys/*", requireRole(["admin"]));
 app.use("/api/accounts/*", requireRole(["admin"]));
 app.use("/api/audit-logs/*", requirePermission("view_audit_logs"));
 app.use("/api/app-review/*", requireRole(["admin"]));
+app.use("/api/settings/app-failover", requirePermission("manage_settings"));
+app.use("/api/settings/app-failover/*", requirePermission("manage_settings"));
 
 // RBAC: viewerはGETのみ許可、POST/PUT/PATCH/DELETEはadmin/operatorのみ
 const VIEWER_READABLE_PATHS = [
   "/api/scenarios/*", "/api/triggers/*", "/api/users/*", "/api/chats/*",
   "/api/automations/*",
-  "/api/templates/*", "/api/surveys/*", "/api/conversions/*", "/api/tracked-links/*",
+  "/api/templates/*", "/api/packages/*", "/api/surveys/*", "/api/variables/*", "/api/conversions/*", "/api/tracked-links/*",
   "/api/analytics/*", "/api/gdpr/*",
 ];
 for (const path of VIEWER_READABLE_PATHS) {
@@ -147,9 +152,12 @@ app.use("/api/automations/*", injectAccountId());
 app.use("/api/users/*", injectAccountId());
 app.use("/api/chats/*", injectAccountId());
 app.use("/api/analytics/*", injectAccountId());
+app.use("/api/settings/*", injectAccountId());
 app.use("/api/gdpr/*", injectAccountId());
 app.use("/api/templates/*", injectAccountId());
+app.use("/api/packages/*", injectAccountId());
 app.use("/api/surveys/*", injectAccountId());
+app.use("/api/variables/*", injectAccountId());
 app.use("/api/app-review/*", injectAccountId());
 app.use("/api/campaigns/*", injectAccountId());
 app.use("/api/campaigns/:id/*", injectAccountId());
@@ -178,7 +186,9 @@ app.route("/", redirectRoute);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/app-config", appConfigRoutes);
 app.route("/api/templates", templateRoutes);
+app.route("/api/packages", packageRoutes);
 app.route("/api/surveys", surveyRoutes);
+app.route("/api/variables", variableRoutes);
 app.route("/api/scenarios", scenarioRoutes);
 app.route("/api/triggers", triggerRoutes);
 app.route("/api/automations", automationRoutes);
@@ -216,18 +226,10 @@ export default {
     let appSecretProof = "";
     let igClient;
     try {
-      const tokenResult = await getDecryptedToken(accountId, {
-        db: env.DB, kv: env.KV, encryptionKey: env.ENCRYPTION_KEY,
-      } as Pick<AuthServiceDeps, "db" | "kv" | "encryptionKey">);
-      if (!tokenResult.ok) {
-        // トークン復号失敗: 全メッセージをDLQへ送って終了
-        await Promise.all(batch.messages.map((m) => env.DLQ.send(m.body)));
-        batch.ackAll();
-        return;
-      }
-      appSecretProof = await generateAppSecretProof(tokenResult.value, env.META_APP_SECRET);
+      const appContext = await getResolvedAppContext(env, accountId);
+      appSecretProof = appContext.appSecretProof;
       igClient = createRealInstagramClient({
-        accessToken: tokenResult.value,
+        accessToken: appContext.accessToken,
         apiVersion: env.META_API_VERSION,
       });
     } catch {
@@ -257,17 +259,11 @@ export default {
     switch (event.cron) {
       case "*/5 * * * *":
         ctx.waitUntil(handleHealthAndReengagement(env));
+        ctx.waitUntil(handleWorkflowResume(env));
         break;
       case "0 3 * * *":
         ctx.waitUntil(handleTokenRefresh(env));
-        break;
-      case "0 4 * * *":
         ctx.waitUntil(handleAuditLogPurge(env));
-        break;
-      case "*/15 * * * *":
-        ctx.waitUntil(handleWorkflowResume(env));
-        break;
-      case "0 5 * * *":
         ctx.waitUntil(handleDataDeletion(env));
         break;
     }

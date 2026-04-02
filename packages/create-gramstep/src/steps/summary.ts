@@ -32,13 +32,19 @@ ${pc.green("=========================================")}
 
 ${pc.yellow("━━━ 製品版などとして外部提供をしたい場合は ━━━")}
 
-${pc.bold("追加Step 1: 基本設定を完成させる")}
+${pc.bold("追加Step 1: ビジネスログインを設定（OAuth）")}
+  ユースケース → カスタマイズ → ${pc.yellow("「Instagramビジネスログインを設定」")}
+
+  有効な OAuth リダイレクトURI に追加:
+    ${pc.cyan(state.workerUrl + "/api/auth/callback")}
+
+${pc.bold("追加Step 2: 基本設定を完成させる")}
   設定 → 基本:
   - プライバシーポリシーURL: ${pc.cyan(state.workerUrl + "/privacy-policy")}（自動生成済み）
   - データの削除手順URL: ${pc.cyan(state.workerUrl + "/api/data-deletion")}
   - 連絡先メールアドレス
 
-${pc.bold("追加Step 2: App Review申請")}
+${pc.bold("追加Step 3: App Review申請")}
   ダッシュボード → ${pc.yellow("「アプリレビュー」")}
 
   ${pc.yellow("申請する権限の用途説明（コピペ用）:")}

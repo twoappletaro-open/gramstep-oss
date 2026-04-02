@@ -22,6 +22,13 @@ export async function seedOperator(state: SetupState, _projectDir: string): Prom
       body: JSON.stringify({ email: state.operatorEmail }),
     });
 
+    if (response.status === 403) {
+      // 管理者が既に存在する場合はスキップ
+      spinner.stop("管理者は既に作成済みです（スキップ）");
+      p.log.info("前回のセットアップで作成された管理者アカウントをそのまま使用します。");
+      return;
+    }
+
     if (!response.ok) {
       const body = await response.text();
       throw new Error(`dev-seed失敗 (HTTP ${response.status}): ${body.slice(0, 200)}`);

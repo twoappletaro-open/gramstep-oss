@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -37,6 +37,10 @@ export function AppReviewForm({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  useEffect(() => {
+    setSettings(initialSettings);
+  }, [initialSettings]);
+
   const handleSave = async () => {
     setSaving(true);
     setMessage("");
@@ -61,6 +65,7 @@ export function AppReviewForm({
         ...prev,
         human_agent_status: status as AppReviewSettings["human_agent_status"],
       }));
+      setMessage("ステータスを更新しました");
     } catch {
       setMessage("ステータス更新に失敗しました");
     }
@@ -74,7 +79,7 @@ export function AppReviewForm({
         <CardHeader>
           <CardTitle>Meta App Review設定</CardTitle>
           <CardDescription>
-            Meta App Reviewに必要な情報を管理します。プライバシーポリシーURLと利用目的はMeta Developer Consoleに入力する内容です。
+            Meta App Review に必要な情報を管理します。プライバシーポリシーURLと利用目的は Meta Developer Console に入力する内容です。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -98,7 +103,7 @@ export function AppReviewForm({
             <Label htmlFor="purpose_description">利用目的説明</Label>
             <Textarea
               id="purpose_description"
-              placeholder="Instagram DM自動配信によるマーケティング自動化を目的として使用します..."
+              placeholder="Instagram DM 自動配信によるマーケティング自動化を目的として使用します..."
               rows={4}
               value={settings.purpose_description}
               onChange={(e) =>
@@ -130,7 +135,7 @@ export function AppReviewForm({
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "保存中..." : "保存"}
             </Button>
-            {message && <span className="text-sm text-muted-foreground">{message}</span>}
+            {message ? <span className="text-sm text-muted-foreground">{message}</span> : null}
           </div>
         </CardContent>
       </Card>
@@ -139,7 +144,7 @@ export function AppReviewForm({
         <CardHeader>
           <CardTitle>HUMAN_AGENT権限</CardTitle>
           <CardDescription>
-            HUMAN_AGENTタグを使用すると、手動返信の24時間ウィンドウが7日間に延長されます。Meta App Reviewで承認が必要です。
+            HUMAN_AGENT タグを使用すると、手動返信の24時間ウィンドウが7日間に延長されます。Meta App Review で承認が必要です。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -149,36 +154,31 @@ export function AppReviewForm({
           </div>
 
           <div className="flex gap-2">
-            {settings.human_agent_status === "not_requested" && (
-              <Button
-                variant="outline"
-                onClick={() => handleHumanAgentUpdate("pending")}
-              >
+            {settings.human_agent_status === "not_requested" ? (
+              <Button variant="outline" onClick={() => void handleHumanAgentUpdate("pending")}>
                 申請済みとしてマーク
               </Button>
-            )}
-            {settings.human_agent_status === "pending" && (
+            ) : null}
+
+            {settings.human_agent_status === "pending" ? (
               <>
-                <Button onClick={() => handleHumanAgentUpdate("approved")}>
+                <Button onClick={() => void handleHumanAgentUpdate("approved")}>
                   承認済みとしてマーク
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={() => handleHumanAgentUpdate("rejected")}
+                  onClick={() => void handleHumanAgentUpdate("rejected")}
                 >
                   却下としてマーク
                 </Button>
               </>
-            )}
-            {(settings.human_agent_status === "approved" ||
-              settings.human_agent_status === "rejected") && (
-              <Button
-                variant="outline"
-                onClick={() => handleHumanAgentUpdate("not_requested")}
-              >
+            ) : null}
+
+            {settings.human_agent_status === "approved" || settings.human_agent_status === "rejected" ? (
+              <Button variant="outline" onClick={() => void handleHumanAgentUpdate("not_requested")}>
                 リセット
               </Button>
-            )}
+            ) : null}
           </div>
         </CardContent>
       </Card>

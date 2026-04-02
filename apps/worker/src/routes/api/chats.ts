@@ -6,11 +6,159 @@ import {
   AssignOperatorInputSchema,
   SendManualMessageInputSchema,
 } from "@gramstep/shared";
+import type { SendManualMessageInput } from "@gramstep/shared";
 import { createWindowManager } from "../../services/window-manager.js";
 import { createWindowExpiryService } from "../../services/window-expiry.js";
-import { createAppReviewService } from "../../services/app-review-service.js";
+import { createTemplateEngine } from "../../services/template-engine.js";
+import type { IgUser } from "@gramstep/db";
 
 export const chatRoutes = new Hono<{ Bindings: Env }>();
+
+const MAX_MANUAL_SCHEDULE_SECONDS = 7 * 24 * 60 * 60;
+
+type ManualPayloadResolution = {
+  messageType: string;
+  content: string | null;
+  payload: Record<string, unknown>;
+  mediaCategory: "text" | "image" | "audio_video";
+  mediaUrl: string | null;
+  mediaR2Key: string | null;
+  sourceId: string | null;
+};
+
+function toPayloadMeta(payload: Record<string, unknown>): Omit<ManualPayloadResolution, "sourceId"> {
+  const payloadType = typeof payload.type === "string" ? payload.type : "text";
+  const textContent = typeof payload.text === "string" ? payload.text : null;
+
+  if (payloadType === "image") {
+    return {
+      messageType: "image",
+      content: textContent,
+      payload,
+      mediaCategory: "image",
+      mediaUrl: typeof payload.url === "string" ? payload.url : null,
+      mediaR2Key: null,
+    };
+  }
+
+  if (payloadType === "video") {
+    return {
+      messageType: "video",
+      content: textContent,
+      payload,
+      mediaCategory: "audio_video",
+      mediaUrl: typeof payload.url === "string" ? payload.url : null,
+      mediaR2Key: null,
+    };
+  }
+
+  if (payloadType === "audio") {
+    return {
+      messageType: "audio",
+      content: textContent,
+      payload,
+      mediaCategory: "audio_video",
+      mediaUrl: typeof payload.url === "string" ? payload.url : null,
+      mediaR2Key: null,
+    };
+  }
+
+  return {
+    messageType: payloadType,
+    content: textContent,
+    payload,
+    mediaCategory: "text",
+    mediaUrl: null,
+    mediaR2Key: null,
+  };
+}
+
+async function resolveManualPayload(
+  db: D1Database,
+  input: SendManualMessageInput,
+  accountId: string,
+  igUserId: string,
+): Promise<ManualPayloadResolution | null> {
+  if (input.message_type === "package") {
+    const user = await db
+      .prepare("SELECT * FROM ig_users WHERE id = ? AND account_id = ?")
+      .bind(igUserId, accountId)
+      .first<IgUser>();
+    if (!user) {
+      return null;
+    }
+
+    const tagsResult = await db
+      .prepare(
+        `SELECT t.name FROM tags t
+         JOIN ig_user_tags iut ON iut.tag_id = t.id
+         WHERE iut.ig_user_id = ?`,
+      )
+      .bind(igUserId)
+      .all<{ name: string }>();
+    const tagNames = (tagsResult.results ?? []).map((tag) => tag.name);
+
+    const templateEngine = createTemplateEngine({ db });
+    const rendered = await templateEngine.renderTemplate(
+      input.package_id,
+      accountId,
+      user,
+      tagNames,
+    );
+    if (!rendered.ok) {
+      return null;
+    }
+
+    switch (rendered.value.type) {
+      case "text":
+        return {
+          ...toPayloadMeta({ type: "text", text: rendered.value.payload }),
+          sourceId: input.package_id,
+        };
+      case "quick_reply": {
+        const parsed = JSON.parse(rendered.value.payload) as Record<string, unknown>;
+        return {
+          ...toPayloadMeta({
+            type: "quick_reply",
+            text: typeof parsed.text === "string" ? parsed.text : "",
+            quick_replies: Array.isArray(parsed.quick_replies) ? parsed.quick_replies : [],
+          }),
+          sourceId: input.package_id,
+        };
+      }
+      case "media":
+        return {
+          ...toPayloadMeta({ type: "image", url: rendered.value.payload }),
+          sourceId: input.package_id,
+        };
+      case "generic": {
+        const parsed = JSON.parse(rendered.value.payload) as Record<string, unknown>;
+        return {
+          ...toPayloadMeta({
+            type: "generic",
+            elements: Array.isArray(parsed.elements) ? parsed.elements : [],
+          }),
+          sourceId: input.package_id,
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
+  if (input.message_type === "text") {
+    return {
+      ...toPayloadMeta({ type: "text", text: input.content }),
+      sourceId: null,
+    };
+  }
+
+  return {
+    ...toPayloadMeta({ type: input.message_type, url: input.media_url }),
+    mediaR2Key: input.media_r2_key ?? null,
+    sourceId: null,
+  };
+}
 
 // GET /api/chats — チャットセッション一覧（最新メッセージ付きユーザーリスト）
 chatRoutes.get("/", async (c) => {
@@ -226,9 +374,18 @@ chatRoutes.post("/:igUserId/send", async (c) => {
     return c.json({ error: "User not found" }, 404);
   }
 
+  const now = Math.floor(Date.now() / 1000);
+  if (parsed.data.scheduled_at !== undefined) {
+    if (parsed.data.scheduled_at <= now) {
+      return c.json({ error: "scheduled_at must be in the future" }, 400);
+    }
+    if (parsed.data.scheduled_at > now + MAX_MANUAL_SCHEDULE_SECONDS) {
+      return c.json({ error: "scheduled_at must be within 7 days" }, 400);
+    }
+  }
+
   const windowManager = createWindowManager({ db: c.env.DB, kv: c.env.KV });
   const windowExpiry = createWindowExpiryService({ db: c.env.DB, kv: c.env.KV });
-  const appReviewService = createAppReviewService({ db: c.env.DB });
 
   const standardWindowActive = await windowManager.isWindowActive(accountId, igUserId);
   const humanAgentWindowActive = standardWindowActive
@@ -240,54 +397,64 @@ chatRoutes.post("/:igUserId/send", async (c) => {
   if (!standardWindowActive) {
     if (!humanAgentWindowActive) {
       return c.json({
-        error: "Messaging window expired. Manual reply is allowed within 24 hours, or within 7 days only with HUMAN_AGENT approval.",
-      }, 409);
-    }
-
-    const appReviewResult = await appReviewService.getSettings(accountId);
-    if (!appReviewResult.ok || appReviewResult.value.human_agent_status !== "approved") {
-      return c.json({
-        error: "HUMAN_AGENT permission is not approved for this account. Send a user message first, or complete Meta App Review.",
+        error: "Messaging window expired. Manual reply is allowed within 24 hours, or within 7 days only when Instagram accepts HUMAN_AGENT.",
       }, 409);
     }
 
     tag = "HUMAN_AGENT";
   }
 
+  const resolved = await resolveManualPayload(c.env.DB, parsed.data, accountId, igUserId);
+  if (!resolved) {
+    return c.json({ error: "Failed to resolve manual message payload" }, 400);
+  }
+
   // Record the manual message in message_logs
   const messageId = crypto.randomUUID().replace(/-/g, "");
   await c.env.DB.prepare(
-    `INSERT INTO message_logs (id, account_id, ig_user_id, direction, message_type, content, source_type, delivery_status)
-     VALUES (?1, ?2, ?3, 'outbound', ?4, ?5, 'manual', 'queued')`,
+    `INSERT INTO message_logs (id, account_id, ig_user_id, direction, message_type, content, source_type, source_id, delivery_status, media_r2_key)
+     VALUES (?1, ?2, ?3, 'outbound', ?4, ?5, 'manual', ?6, 'queued', ?7)`,
   )
-    .bind(messageId, accountId, igUserId, parsed.data.message_type, parsed.data.content)
+    .bind(
+      messageId,
+      accountId,
+      igUserId,
+      resolved.messageType,
+      resolved.content,
+      resolved.sourceId,
+      resolved.mediaR2Key,
+    )
     .run();
 
-  // HUMAN_AGENT タグ付きで SEND_QUEUE にエンキュー（7日ウィンドウで送信）
-  const messagePayload: Record<string, string> = { type: parsed.data.message_type, text: parsed.data.content };
-  if (parsed.data.message_type === "image" && parsed.data.media_url) {
-    messagePayload.url = parsed.data.media_url;
-  }
-
-  await (c.env.SEND_QUEUE as Queue).send({
+  const queueMessage = {
     id: messageId,
     accountId,
     igUserId,
     recipientId: user.ig_scoped_id,
-    messagePayload: JSON.stringify(messagePayload),
-    mediaCategory: parsed.data.message_type === "image" ? "image" : "text",
+    messagePayload: JSON.stringify(resolved.payload),
+    mediaCategory: resolved.mediaCategory,
     sourceType: "manual",
-    sourceId: null,
+    sourceId: resolved.sourceId,
     enrollmentId: null,
     retryCount: 0,
-    mediaUrl: parsed.data.media_url ?? null,
+    mediaUrl: resolved.mediaUrl,
     mediaUrlHash: null,
     tag,
-  });
+  };
+
+  const delaySeconds = parsed.data.scheduled_at
+    ? Math.max(0, parsed.data.scheduled_at - now)
+    : 0;
+  if (delaySeconds > 0) {
+    await (c.env.SEND_QUEUE as Queue).send(queueMessage, { delaySeconds });
+  } else {
+    await (c.env.SEND_QUEUE as Queue).send(queueMessage);
+  }
 
   return c.json({
     message_id: messageId,
     status: "queued",
     delivery_mode: tag === "HUMAN_AGENT" ? "human_agent" : "response",
+    scheduled_at: parsed.data.scheduled_at ?? null,
   });
 });

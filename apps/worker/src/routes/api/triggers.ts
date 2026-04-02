@@ -24,7 +24,7 @@ function errorStatus(code: string): TriggerErrorStatus {
 }
 
 function getEngine(env: Env): TriggerEngineService {
-  return createTriggerEngine({ db: env.DB });
+  return createTriggerEngine({ db: env.DB, kv: env.KV });
 }
 
 function getAccountId(c: { get: (key: string) => unknown }): string {

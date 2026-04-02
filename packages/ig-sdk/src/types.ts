@@ -16,6 +16,8 @@ export type SendMessageRequest = {
 export type MessagePayload =
   | TextMessage
   | ImageMessage
+  | VideoMessage
+  | AudioMessage
   | GenericTemplateMessage
   | QuickReplyMessage;
 
@@ -30,9 +32,25 @@ export type ImageMessage = {
   attachmentId?: string;
 };
 
+export type VideoMessage = {
+  type: "video";
+  url: string;
+};
+
+export type AudioMessage = {
+  type: "audio";
+  url: string;
+};
+
 export type GenericTemplateMessage = {
   type: "generic";
   elements: GenericElement[];
+  imageAspectRatio?: "horizontal" | "square";
+};
+
+export type DefaultAction = {
+  type: "web_url";
+  url: string;
 };
 
 export type GenericElement = {
@@ -40,6 +58,7 @@ export type GenericElement = {
   subtitle?: string;
   imageUrl?: string;
   buttons?: Button[];
+  defaultAction?: DefaultAction;
 };
 
 export type Button =

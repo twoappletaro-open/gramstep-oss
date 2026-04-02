@@ -1,5 +1,6 @@
-import type { Result, AppError, TriggerAction } from "@gramstep/shared";
+import type { Result, AppError, PackageButton, TriggerAction } from "@gramstep/shared";
 import { ok, err, createAppError } from "@gramstep/shared";
+import { parsePackageBody, serializePackageBody } from "./package-format.js";
 
 // ────────── Export Types ──────────
 
@@ -75,6 +76,50 @@ export interface AccountConfigCopyDeps {
   db: D1Database;
   generateId: () => string;
   now: () => number;
+}
+
+function remapTemplateReferencesInBody(body: string, templateIdMap: Map<string, string>): string {
+  const packageBody = parsePackageBody(body);
+  if (!packageBody) {
+    return body;
+  }
+
+  function remapPackageId(packageId: string | undefined): string | undefined {
+    return packageId ? (templateIdMap.get(packageId) ?? packageId) : packageId;
+  }
+
+  return serializePackageBody(
+    packageBody.text,
+    packageBody.buttons.map((button: PackageButton) => ({
+      ...button,
+      action: (() => {
+        const selectionMode = button.action.selectionMode
+          ?? (button.action.useFollowerCondition ? "follower_condition" : "specific");
+
+        if (selectionMode === "follower_condition") {
+          return {
+            ...button.action,
+            followerPackageId: remapPackageId(button.action.followerPackageId),
+            nonFollowerPackageId: remapPackageId(button.action.nonFollowerPackageId),
+          };
+        }
+
+        if (selectionMode === "random") {
+          return {
+            ...button.action,
+            packageIds: (button.action.packageIds ?? []).map(
+              (packageId: string) => templateIdMap.get(packageId) ?? packageId,
+            ),
+          };
+        }
+
+        return {
+          ...button.action,
+          packageId: remapPackageId(button.action.packageId),
+        };
+      })(),
+    })),
+  );
 }
 
 // ────────── DB Row Types ──────────
@@ -297,8 +342,11 @@ export function createAccountConfigCopyService(
         // Import templates (before triggers, for ID remapping)
         const templateIdMap = new Map<string, string>();
         for (const tpl of data.templates) {
-          const newTemplateId = generateId();
-          templateIdMap.set(tpl.id, newTemplateId);
+          templateIdMap.set(tpl.id, generateId());
+        }
+
+        for (const tpl of data.templates) {
+          const newTemplateId = templateIdMap.get(tpl.id) ?? generateId();
           await db
             .prepare(
               `INSERT INTO templates (id, account_id, name, type, body, variables, version, is_active, created_at, updated_at)
@@ -309,7 +357,7 @@ export function createAccountConfigCopyService(
               targetAccountId,
               tpl.name,
               tpl.type,
-              tpl.body,
+              remapTemplateReferencesInBody(tpl.body, templateIdMap),
               JSON.stringify(tpl.variables),
               tpl.is_active ? 1 : 0,
               currentTime,
@@ -328,6 +376,17 @@ export function createAccountConfigCopyService(
           const remappedActions = (tr.actions as Array<Record<string, unknown>>).map((a) => {
             if (a.type === "send_template" && typeof a.templateId === "string") {
               return { ...a, templateId: templateIdMap.get(a.templateId) ?? a.templateId };
+            }
+            if (
+              a.type === "send_template_by_follower_status"
+              && typeof a.followerTemplateId === "string"
+              && typeof a.nonFollowerTemplateId === "string"
+            ) {
+              return {
+                ...a,
+                followerTemplateId: templateIdMap.get(a.followerTemplateId) ?? a.followerTemplateId,
+                nonFollowerTemplateId: templateIdMap.get(a.nonFollowerTemplateId) ?? a.nonFollowerTemplateId,
+              };
             }
             if (a.type === "enroll_scenario" && typeof a.scenarioId === "string") {
               return { ...a, scenarioId: scenarioIdMap.get(a.scenarioId) ?? a.scenarioId };

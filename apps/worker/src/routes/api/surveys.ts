@@ -93,6 +93,32 @@ surveyRoutes.get("/:id/export", async (c) => {
   return c.body(result.value);
 });
 
+surveyRoutes.get("/:id/responses", async (c) => {
+  const accountId = getAccountId(c);
+  if (!accountId) return c.json({ error: "Missing accountId" }, 400);
+
+  const rawLimit = Number(c.req.query("limit") ?? "50");
+  const rawOffset = Number(c.req.query("offset") ?? "0");
+  const limit = Number.isFinite(rawLimit) ? rawLimit : 50;
+  const offset = Number.isFinite(rawOffset) ? rawOffset : 0;
+  const result = await getService(c.env).listResponses(c.req.param("id"), accountId, limit, offset);
+  if (!result.ok) {
+    return c.json({ error: result.error.message }, errorStatus(result.error.code));
+  }
+  return c.json(result.value);
+});
+
+surveyRoutes.get("/:id/report", async (c) => {
+  const accountId = getAccountId(c);
+  if (!accountId) return c.json({ error: "Missing accountId" }, 400);
+
+  const result = await getService(c.env).getReport(c.req.param("id"), accountId);
+  if (!result.ok) {
+    return c.json({ error: result.error.message }, errorStatus(result.error.code));
+  }
+  return c.json(result.value);
+});
+
 surveyRoutes.post("/:id/start/:igUserId", async (c) => {
   const accountId = getAccountId(c);
   if (!accountId) return c.json({ error: "Missing accountId" }, 400);

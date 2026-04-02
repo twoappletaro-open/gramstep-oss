@@ -8,6 +8,7 @@ import { Badge } from "../../../components/ui/badge";
 import { AppReviewForm, type AppReviewSettings } from "../../../components/settings/app-review-form";
 import { PrivacyPolicyEditor } from "../../../components/settings/privacy-policy-editor";
 import { AppConfigPanel } from "../../../components/settings/app-config-panel";
+import { AppFailoverPanel } from "../../../components/settings/app-failover-panel";
 
 interface AccountInfo {
   id: string;
@@ -17,9 +18,20 @@ interface AccountInfo {
   tokenExpiresAt: number;
 }
 
+function authHeaders(accountId: string): Record<string, string> {
+  const accessToken = typeof window !== "undefined" ? sessionStorage.getItem("accessToken") ?? "" : "";
+  return {
+    "Content-Type": "application/json",
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    ...(accountId ? { "x-account-id": accountId } : {}),
+  };
+}
+
 export default function SettingsPage() {
   const t = useTranslations("settings");
   const [account, setAccount] = useState<AccountInfo | null>(null);
+  const [appReview, setAppReview] = useState<AppReviewSettings | null>(null);
+  const [appReviewLoading, setAppReviewLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const apiUrl = getApiUrl();
   const accountId = typeof window !== "undefined" ? localStorage.getItem("gramstep_account_id") ?? "" : "";
@@ -49,8 +61,53 @@ export default function SettingsPage() {
     }).catch(() => setLoading(false));
   }
 
+  async function loadAppReview() {
+    if (!apiUrl || !accountId) {
+      setAppReviewLoading(false);
+      return;
+    }
+
+    setAppReviewLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/api/app-review`, {
+        headers: authHeaders(accountId),
+      });
+      const body = await res.json().catch(() => null) as AppReviewSettings | null;
+      if (res.ok && body) {
+        setAppReview(body);
+      }
+    } finally {
+      setAppReviewLoading(false);
+    }
+  }
+
+  async function saveAppReview(settings: Partial<AppReviewSettings>) {
+    const res = await fetch(`${apiUrl}/api/app-review`, {
+      method: "PUT",
+      headers: authHeaders(accountId),
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) {
+      throw new Error("Failed to save app review settings");
+    }
+    await loadAppReview();
+  }
+
+  async function updateHumanAgent(status: string) {
+    const res = await fetch(`${apiUrl}/api/app-review/human-agent`, {
+      method: "PUT",
+      headers: authHeaders(accountId),
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      throw new Error("Failed to update HUMAN_AGENT status");
+    }
+    await loadAppReview();
+  }
+
   useEffect(() => {
     void loadAccount();
+    void loadAppReview();
   }, [apiUrl, accountId]);
 
   const isConnected = account && account.igUsername && account.igUsername !== "pending_setup";
@@ -96,21 +153,25 @@ export default function SettingsPage() {
       {/* アプリ設定 */}
       <AppConfigPanel apiUrl={apiUrl} onTokenUpdated={loadAccount} />
 
+      {/* アプリ切替 */}
+      <AppFailoverPanel apiUrl={apiUrl} onUpdated={loadAccount} />
+
       {/* プライバシーポリシー */}
       <PrivacyPolicyEditor apiUrl={apiUrl} />
 
       {/* App Review */}
       <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <AppReviewForm
-          initialSettings={{
-            privacy_policy_url: `${apiUrl}/privacy-policy`,
-            purpose_description: "",
-            verification_steps: "",
-            human_agent_status: "not_requested",
-          }}
-          onSave={async () => {}}
-          onUpdateHumanAgent={async () => {}}
-        />
+        {appReviewLoading ? (
+          <p className="text-sm text-muted-foreground">App Review設定を読み込み中...</p>
+        ) : appReview ? (
+          <AppReviewForm
+            initialSettings={appReview}
+            onSave={saveAppReview}
+            onUpdateHumanAgent={updateHumanAgent}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">App Review設定を取得できませんでした</p>
+        )}
       </div>
     </div>
   );

@@ -19,6 +19,7 @@ export interface DripWorkflowParams {
   scenarioId: string;
   accountId: string;
   igUserId: string;
+  startStepOrder?: number;
 }
 
 export interface DripWorkflowDeps {
@@ -158,7 +159,9 @@ export async function executeDripWorkflow(
   }
 
   // 2. Process steps — supports branching via condition_config
-  let currentIndex = 0;
+  const requestedStartStepOrder = params.startStepOrder ?? 1;
+  const startIndex = steps.findIndex((scenarioStep) => scenarioStep.step_order >= requestedStartStepOrder);
+  let currentIndex = startIndex >= 0 ? startIndex : steps.length;
   while (currentIndex < steps.length) {
     const scenarioStep = steps[currentIndex];
     if (!scenarioStep) break;

@@ -22,7 +22,7 @@
         "./src/*"
       ]
     },
-    "allowJs": true,
+    "allowJs": false,
     "noEmit": true,
     "incremental": true,
     "module": "esnext"
@@ -32,6 +32,7 @@
     "*.config.ts",
     "next-env.d.ts",
     "src",
+    "src/messages/*.json",
     ".next/types/**/*.ts"
   ],
   "exclude": [

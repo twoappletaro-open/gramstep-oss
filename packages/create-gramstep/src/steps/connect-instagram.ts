@@ -35,21 +35,7 @@ export async function connectInstagram(state: SetupState, _projectDir: string): 
   });
   if (p.isCancel(webhookDone)) throw new SetupError("ユーザーがキャンセルしました");
 
-  // --- 4. Business Login redirect URI ---
-  const callbackUrl = `${state.workerUrl}/api/auth/callback`;
-  p.log.step(pc.bold("Instagramビジネスログインを設定"));
-  p.log.info("ユースケース → カスタマイズ → " + pc.yellow("「Instagramビジネスログインを設定」") + " を開いてください。");
-  p.log.info("");
-  p.log.info("  有効な OAuth リダイレクトURI に追加:");
-  p.log.info(`    ${pc.cyan(callbackUrl)}`);
-  p.log.info("");
-  const bizLoginDone = await p.confirm({
-    message: "リダイレクトURIを設定しましたか？",
-    initialValue: true,
-  });
-  if (p.isCancel(bizLoginDone)) throw new SetupError("ユーザーがキャンセルしました");
-
-  // --- 5. App Review ---
+  // --- 4. App Review ---
   p.log.step(pc.bold("アプリレビュー"));
   p.log.info("ダッシュボード → " + pc.yellow("「アプリレビュー」") + " へ移動してください。");
   p.log.info(pc.dim("※ 詳しい申請手順はセットアップ完了後のサマリーに表示されます。"));

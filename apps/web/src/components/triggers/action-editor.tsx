@@ -16,7 +16,12 @@ export type ActionFormData = TriggerAction;
 const ACTION_TYPES = [
   { value: "enroll_scenario", label: "シナリオ登録", hint: "ユーザーを指定シナリオのステップ配信に自動登録" },
   { value: "start_survey", label: "アンケート開始", hint: "ユーザーにアンケートの最初の質問を送信して回答を開始" },
-  { value: "send_template", label: "テンプレート送信", hint: "定型メッセージテンプレートを即時送信" },
+  { value: "send_template", label: "パッケージ送信", hint: "作成済みパッケージを即時送信" },
+  {
+    value: "send_template_by_follower_status",
+    label: "フォロワー条件パッケージ送信",
+    hint: "フォロー状態に応じて送信するパッケージを切り替えます",
+  },
   { value: "add_tag", label: "タグ追加", hint: "ユーザーにタグを付与（セグメント分けに利用）" },
   { value: "remove_tag", label: "タグ削除", hint: "ユーザーからタグを削除" },
   { value: "webhook", label: "Webhook通知", hint: "外部サービスにイベントを通知" },
@@ -29,6 +34,12 @@ const ACTION_TYPES = [
 function defaultAction(type: string): ActionFormData {
   switch (type) {
     case "send_template": return { type: "send_template", templateId: "" };
+    case "send_template_by_follower_status":
+      return {
+        type: "send_template_by_follower_status",
+        followerTemplateId: "",
+        nonFollowerTemplateId: "",
+      };
     case "start_survey": return { type: "start_survey", surveyId: "" };
     case "add_tag": return { type: "add_tag", tagId: "" };
     case "remove_tag": return { type: "remove_tag", tagId: "" };
@@ -55,7 +66,7 @@ export function ActionEditor({ actions, onChange }: ActionEditorProps) {
   const [surveys, setSurveys] = useState<OptionItem[]>([]);
   const [tags, setTags] = useState<OptionItem[]>([]);
   const [campaigns, setCampaigns] = useState<OptionItem[]>([]);
-  const [templates, setTemplates] = useState<OptionItem[]>([]);
+  const [packages, setPackages] = useState<OptionItem[]>([]);
 
   useEffect(() => {
     const apiUrl = getApiUrl();
@@ -84,13 +95,13 @@ export function ActionEditor({ actions, onChange }: ActionEditorProps) {
       }
     }).catch(() => {});
 
-    client.templates.list(accountId).then((r) => {
+    client.packages.list(accountId).then((r) => {
       if (r.ok) {
-        const items = (r.value as Array<Record<string, unknown>>).map((template) => ({
-          id: (template.id ?? "") as string,
-          name: (template.name ?? "") as string,
+        const items = (r.value as Array<Record<string, unknown>>).map((pkg) => ({
+          id: (pkg.id ?? "") as string,
+          name: (pkg.name ?? "") as string,
         }));
-        setTemplates(items);
+        setPackages(items);
       }
     }).catch(() => {});
 
@@ -130,6 +141,31 @@ export function ActionEditor({ actions, onChange }: ActionEditorProps) {
 
   function removeAction(index: number) {
     onChange(actions.filter((_, i) => i !== index));
+  }
+
+  function renderTemplateSelect(
+    value: string,
+    onValueChange: (value: string) => void,
+    placeholder = "package-id",
+  ) {
+    if (packages.length > 0) {
+      return (
+        <Select value={value} onChange={(e) => onValueChange(e.target.value)}>
+          <option value="">-- パッケージを選択 --</option>
+          {packages.map((pkg) => (
+            <option key={pkg.id} value={pkg.id}>{pkg.name}</option>
+          ))}
+        </Select>
+      );
+    }
+
+    return (
+      <Input
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    );
   }
 
   return (
@@ -227,30 +263,44 @@ export function ActionEditor({ actions, onChange }: ActionEditorProps) {
               </div>
             )}
 
-            {/* テンプレート送信 */}
+            {/* パッケージ送信 */}
             {action.type === "send_template" && (
               <div className="space-y-2">
                 <Label className="flex items-center gap-1">
-                  {t("templateId")}
-                  <Tooltip content="送信するメッセージテンプレートのID" />
+                  パッケージ
+                  <Tooltip content="送信するパッケージを選択します" />
                 </Label>
-                {templates.length > 0 ? (
-                  <Select
-                    value={action.templateId}
-                    onChange={(e) => updateAction(index, { ...action, templateId: e.target.value })}
-                  >
-                    <option value="">-- テンプレートを選択 --</option>
-                    {templates.map((template) => (
-                      <option key={template.id} value={template.id}>{template.name}</option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input
-                    value={action.templateId}
-                    onChange={(e) => updateAction(index, { ...action, templateId: e.target.value })}
-                    placeholder="template-id"
-                  />
+                {renderTemplateSelect(
+                  action.templateId,
+                  (templateId) => updateAction(index, { ...action, templateId }),
                 )}
+              </div>
+            )}
+
+            {action.type === "send_template_by_follower_status" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1">
+                    フォロワー向けパッケージ
+                    <Tooltip content="フォロー中ユーザーに送信するパッケージです" />
+                  </Label>
+                  {renderTemplateSelect(
+                    action.followerTemplateId,
+                    (followerTemplateId) => updateAction(index, { ...action, followerTemplateId }),
+                    "follower-package-id",
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1">
+                    未フォロー向けパッケージ
+                    <Tooltip content="未フォローまたはフォロー状態を判定できないユーザーに送信するパッケージです" />
+                  </Label>
+                  {renderTemplateSelect(
+                    action.nonFollowerTemplateId,
+                    (nonFollowerTemplateId) => updateAction(index, { ...action, nonFollowerTemplateId }),
+                    "non-follower-package-id",
+                  )}
+                </div>
               </div>
             )}
 

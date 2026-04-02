@@ -1,4 +1,7 @@
 import type { Env } from "../env.js";
+import type { IInstagramClient } from "@gramstep/ig-sdk";
+import { createAppError, err, ok } from "@gramstep/shared";
+import type { AppError, Result } from "@gramstep/shared";
 
 export async function verifySignature(
   body: string,
@@ -119,6 +122,7 @@ export function extractEventId(event: MessagingEvent): string {
 export async function processEntryAsync(
   entry: WebhookEntry,
   env: Env,
+  executionCtx?: ExecutionContext,
 ): Promise<void> {
   const { processWebhookEvent } = await import("./event-processor.js");
   const { upsertIgUser, recordMessageLog } = await import("./user-registration.js");
@@ -134,6 +138,91 @@ export async function processEntryAsync(
     return;
   }
   const accountId = accountResult.value;
+  type MessagingContext = {
+    accessToken: string;
+    appSecretProof: string;
+    igClient: IInstagramClient;
+  };
+
+  let messagingContextPromise: Promise<Result<MessagingContext, AppError>> | null = null;
+  function defer(task: Promise<unknown>): void {
+    const safeTask = task.catch(() => undefined);
+    if (executionCtx) {
+      executionCtx.waitUntil(safeTask);
+      return;
+    }
+    void safeTask;
+  }
+
+  async function getMessagingContext(): Promise<Result<MessagingContext, AppError>> {
+    if (messagingContextPromise) {
+      return messagingContextPromise;
+    }
+
+    messagingContextPromise = (async () => {
+      const [{ getResolvedAppContext }, sdk] = await Promise.all([
+        import("./app-failover.js"),
+        import("@gramstep/ig-sdk"),
+      ]);
+
+      let appContext;
+      try {
+        appContext = await getResolvedAppContext(env, accountId);
+      } catch (error) {
+        return err(
+          createAppError(
+            "INTERNAL_ERROR",
+            error instanceof Error ? error.message : "Access token not available",
+          ),
+        );
+      }
+
+      return ok({
+        accessToken: appContext.accessToken,
+        appSecretProof: appContext.appSecretProof,
+        igClient: sdk.createRealInstagramClient({
+          accessToken: appContext.accessToken,
+          apiVersion: env.META_API_VERSION,
+        }),
+      });
+    })();
+
+    return messagingContextPromise;
+  }
+
+  async function sendDemoEntryFallback(
+    recipientId: string,
+    igUserId: string,
+  ): Promise<void> {
+    if (accountId !== "acc_default") {
+      return;
+    }
+
+    const contextResult = await getMessagingContext();
+    if (!contextResult.ok) {
+      console.error("[Webhook] demo fallback skipped: messaging context unavailable", contextResult.error);
+      return;
+    }
+
+    const sendResult = await contextResult.value.igClient.sendMessage(
+      igUserId,
+      {
+        recipientId,
+        message: {
+          type: "quick_reply",
+          text: "デモと打ってみてください。",
+          quickReplies: [
+            { contentType: "text", title: "デモ", payload: "デモ" },
+          ],
+        },
+      },
+      contextResult.value.appSecretProof,
+    );
+
+    if (!sendResult.ok) {
+      console.error("[Webhook] failed to send demo fallback", sendResult.error);
+    }
+  }
 
   // entry.changes 処理（comments / live_comments 等）
   if (entry.changes) {
@@ -193,54 +282,14 @@ export async function processEntryAsync(
       igScopedId: event.sender.id,
       timestamp: Math.floor(event.timestamp / 1000),
     });
-
-    // プロフィール未取得ユーザー: /{IGSID} User Profile APIでプロフィール取得
-    const existingProfile = await env.DB.prepare(
-      "SELECT ig_username FROM ig_users WHERE id = ?",
-    ).bind(userResult.userId).first<{ ig_username: string | null }>();
-    const needsProfile = userResult.isNew || !existingProfile?.ig_username;
-    if (needsProfile) {
-      try {
-        const { getDecryptedToken } = await import("./auth-service.js");
-        const { generateAppSecretProof } = await import("./crypto.js");
-        const { createRealInstagramClient } = await import("@gramstep/ig-sdk");
-        const tokenResult = await getDecryptedToken(accountId, {
-          db: env.DB, kv: env.KV, encryptionKey: env.ENCRYPTION_KEY,
-        });
-        if (tokenResult.ok) {
-          const proof = await generateAppSecretProof(tokenResult.value, env.META_APP_SECRET);
-          const igClient = createRealInstagramClient({
-            accessToken: tokenResult.value,
-            apiVersion: env.META_API_VERSION,
-          });
-          const profileResult = await igClient.getUserProfile(event.sender.id, tokenResult.value, proof);
-          if (profileResult.ok && profileResult.value.username) {
-            const p = profileResult.value;
-            const followerStatus = (p.is_user_follow_business ?? p.isUserFollowingBusiness) ? "following" : "unknown";
-            await env.DB.prepare(
-              "UPDATE ig_users SET ig_username = ?, display_name = ?, follower_status = ?, updated_at = ? WHERE id = ?",
-            ).bind(p.username ?? null, p.name ?? p.username ?? null, followerStatus, Math.floor(Date.now() / 1000), userResult.userId).run();
-          } else {
-            // プロフィール取得失敗またはusernameなし
-          }
-        }
-      } catch {
-        // プロフィール取得失敗はWebhook処理を中断させない
-      }
-    }
-
-    // DM受信 = 24時間メッセージングウィンドウをオープン/更新
-    const { createWindowManager } = await import("./window-manager.js");
-    const windowMgr = createWindowManager({ db: env.DB, kv: env.KV });
-    const windowResult = await windowMgr.updateWindow(accountId, userResult.userId);
-    void windowResult;
+    void getMessagingContext();
 
     if (!result.stateUpdateSkipped) {
       const messageType = result.messageType ?? "unknown";
       const content = event.message?.text ?? event.postback?.title ?? null;
       const igMessageId = event.message?.mid ?? event.postback?.mid ?? null;
 
-      await recordMessageLog(env.DB, {
+      defer(recordMessageLog(env.DB, {
         accountId,
         igUserId: userResult.userId,
         direction: "inbound",
@@ -248,13 +297,33 @@ export async function processEntryAsync(
         content,
         sourceType: "webhook",
         igMessageId,
-      });
+      }));
 
       try {
         const { createSurveyService } = await import("./survey-service.js");
         const surveyResult = await createSurveyService({
           db: env.DB,
           sendQueue: env.SEND_QUEUE,
+          sendImmediate: async ({ messageId, igUserId, recipientId, message }) => {
+            const contextResult = await getMessagingContext();
+            if (!contextResult.ok) {
+              return err(createAppError("INTERNAL_ERROR", contextResult.error.message));
+            }
+            const sendResult = await contextResult.value.igClient.sendMessage(
+              igUserId,
+              { recipientId, message },
+              contextResult.value.appSecretProof,
+            );
+            if (!sendResult.ok) {
+              return err(createAppError("INSTAGRAM_API_ERROR", sendResult.error.message));
+            }
+            await env.DB
+              .prepare("UPDATE message_logs SET delivery_status = 'sent', ig_message_id = ? WHERE id = ?")
+              .bind(sendResult.value.messageId, messageId)
+              .run()
+              .catch(() => undefined);
+            return ok(undefined);
+          },
         }).handleIncomingResponse({
           accountId,
           igUserId: userResult.userId,
@@ -265,8 +334,64 @@ export async function processEntryAsync(
         if (surveyResult.ok && surveyResult.value.handled) {
           continue;
         }
-      } catch {
+      } catch (error) {
+        console.error("[Webhook] survey response handling failed", error);
         // アンケート回答処理失敗はトリガー処理を継続
+      }
+
+      try {
+        const { parsePackageButtonPayload } = await import("./package-format.js");
+        const packagePayload = parsePackageButtonPayload(
+          event.message?.quick_reply?.payload ?? event.postback?.payload ?? null,
+        );
+        if (packagePayload) {
+          const contextResult = await getMessagingContext();
+          if (contextResult.ok) {
+            const { createEnrollmentService } = await import("./enrollment-service.js");
+            const { createPackageButtonExecutor } = await import("./package-button-executor.js");
+
+            const enrollmentService = createEnrollmentService({
+              db: env.DB,
+              dripWorkflow: env.DRIP_WORKFLOW,
+              sendImmediate: async ({ messageId, igUserId, recipientId, message }) => {
+                const sendResult = await contextResult.value.igClient.sendMessage(
+                  igUserId,
+                  { recipientId, message },
+                  contextResult.value.appSecretProof,
+                );
+                if (!sendResult.ok) {
+                  return err(createAppError("INSTAGRAM_API_ERROR", sendResult.error.message));
+                }
+                await env.DB
+                  .prepare("UPDATE message_logs SET delivery_status = 'sent', ig_message_id = ? WHERE id = ?")
+                  .bind(sendResult.value.messageId, messageId)
+                  .run()
+                  .catch(() => undefined);
+                return ok(undefined);
+              },
+            });
+
+            await createPackageButtonExecutor({
+              db: env.DB,
+              kv: env.KV,
+              igClient: contextResult.value.igClient,
+              enrollmentService,
+              sendQueue: env.SEND_QUEUE,
+              fetchFn: fetch,
+            }).handle({
+              accountId,
+              igUserId: userResult.userId,
+              recipientId: event.sender.id,
+              payload: event.message?.quick_reply?.payload ?? event.postback?.payload ?? null,
+              accessToken: contextResult.value.accessToken,
+              appSecretProof: contextResult.value.appSecretProof,
+            });
+            continue;
+          }
+        }
+      } catch (error) {
+        console.error("[Webhook] package button handling failed", error);
+        // パッケージボタン処理失敗でも通常トリガー処理へフォールスルーする
       }
 
       // トリガーエンジン連携（DM / Postback / Ice Breaker）
@@ -274,11 +399,8 @@ export async function processEntryAsync(
         const { createTriggerEngine } = await import("./trigger-engine.js");
         const { createTriggerActionExecutor } = await import("./trigger-action-executor.js");
         const { createEnrollmentService } = await import("./enrollment-service.js");
-        const { createRealInstagramClient } = await import("@gramstep/ig-sdk");
-        const { getDecryptedToken } = await import("./auth-service.js");
-        const { generateAppSecretProof } = await import("./crypto.js");
 
-        const triggerEngine = createTriggerEngine({ db: env.DB });
+        const triggerEngine = createTriggerEngine({ db: env.DB, kv: env.KV });
 
         // イベントタイプとテキストを判定
         const triggerEvent = event.postback
@@ -291,22 +413,48 @@ export async function processEntryAsync(
           userResult.userId,
         );
 
-        if (triggerResult.ok && triggerResult.value.length > 0) {
-          // トークン取得（メッセージ送信用）
-          const tokenResult = await getDecryptedToken(accountId, {
-            db: env.DB, kv: env.KV, encryptionKey: env.ENCRYPTION_KEY,
+        if (!triggerResult.ok) {
+          console.error("[Webhook] trigger evaluation failed", triggerResult.error);
+        } else {
+          console.log("[Webhook] trigger matches", {
+            accountId,
+            igUserId: userResult.userId,
+            eventType: triggerEvent.type,
+            text: triggerEvent.text,
+            count: triggerResult.value.length,
+            triggerIds: triggerResult.value.map((match) => match.triggerId),
           });
+        }
+
+        if (triggerResult.ok && triggerResult.value.length > 0) {
+          const contextResult = await getMessagingContext();
 
           const enrollmentService = createEnrollmentService({
             db: env.DB,
             dripWorkflow: env.DRIP_WORKFLOW,
+            sendImmediate: async ({ messageId, igUserId, recipientId, message }) => {
+              if (!contextResult.ok) {
+                return err(createAppError("INTERNAL_ERROR", "Access token not available"));
+              }
+              const sendResult = await contextResult.value.igClient.sendMessage(
+                igUserId,
+                { recipientId, message },
+                contextResult.value.appSecretProof,
+              );
+              if (!sendResult.ok) {
+                return err(createAppError("INSTAGRAM_API_ERROR", sendResult.error.message));
+              }
+              await env.DB
+                .prepare("UPDATE message_logs SET delivery_status = 'sent', ig_message_id = ? WHERE id = ?")
+                .bind(sendResult.value.messageId, messageId)
+                .run()
+                .catch(() => undefined);
+              return ok(undefined);
+            },
           });
 
-          const igClient = tokenResult.ok
-            ? createRealInstagramClient({
-                accessToken: tokenResult.value,
-                apiVersion: env.META_API_VERSION,
-              })
+          const igClient = contextResult.ok
+            ? contextResult.value.igClient
             : new (await import("@gramstep/ig-sdk")).MockInstagramClient();
 
           const executor = createTriggerActionExecutor({
@@ -337,50 +485,65 @@ export async function processEntryAsync(
               accountId,
               igUserId: userResult.userId,
               triggerId: match.triggerId,
-              accessToken: tokenResult.ok ? tokenResult.value : "",
-              appSecretProof: tokenResult.ok
-                ? await generateAppSecretProof(tokenResult.value, env.META_APP_SECRET)
-                : "",
+              accessToken: contextResult.ok ? contextResult.value.accessToken : "",
+              appSecretProof: contextResult.ok ? contextResult.value.appSecretProof : "",
               recipientId: event.sender.id,
             };
             await executor.executeActions(match.actions, ctx);
-
-            // シナリオ登録アクションの場合、即時にステップ1をQueue送信（Workflow遅延回避）
-            for (const action of match.actions) {
-              if (action.type === "enroll_scenario" && action.scenarioId) {
-                const steps = await env.DB
-                  .prepare("SELECT step_order, delay_seconds, message_type, message_payload FROM scenario_steps WHERE scenario_id = ? ORDER BY step_order ASC")
-                  .bind(action.scenarioId)
-                  .all<{ step_order: number; delay_seconds: number; message_type: string; message_payload: string }>();
-
-                let cumulativeDelay = 0;
-                for (const s of steps.results) {
-                  cumulativeDelay += s.delay_seconds > 0 ? s.delay_seconds : 0;
-                  const msgId = crypto.randomUUID().replace(/-/g, "");
-                  // step_order順に配信するため、各ステップの遅延を累積する
-                  // さらにstep_order分の最小オフセット(1s刻み)で順序を保証
-                  const delaySeconds = cumulativeDelay + (s.step_order - 1);
-                  await env.SEND_QUEUE.send({
-                    id: msgId,
-                    accountId,
-                    igUserId: userResult.userId,
-                    recipientId: event.sender.id,
-                    messagePayload: s.message_payload,
-                    mediaCategory: s.message_type === "image" ? "image" : "text",
-                    sourceType: "scenario",
-                    sourceId: action.scenarioId,
-                    enrollmentId: null,
-                    retryCount: 0,
-                  }, { delaySeconds });
-                }
-              }
-            }
           }
+        } else if (
+          triggerResult.ok
+          && triggerEvent.type === "dm"
+          && !event.message?.quick_reply
+          && (event.message?.text ?? "").trim().length > 0
+        ) {
+          await sendDemoEntryFallback(event.sender.id, userResult.userId);
         }
-      } catch {
+      } catch (error) {
+        console.error("[Webhook] trigger handling failed", error);
         // トリガー評価の失敗はWebhook処理全体を中断させない
       }
     }
+
+    defer((async () => {
+      const { createWindowManager } = await import("./window-manager.js");
+      const windowMgr = createWindowManager({ db: env.DB, kv: env.KV });
+      await windowMgr.updateWindow(accountId, userResult.userId);
+    })());
+
+    defer((async () => {
+      const existingProfile = await env.DB.prepare(
+        "SELECT ig_username FROM ig_users WHERE id = ?",
+      ).bind(userResult.userId).first<{ ig_username: string | null }>();
+      const needsProfile = userResult.isNew || !existingProfile?.ig_username;
+      if (!needsProfile) {
+        return;
+      }
+
+      const contextResult = await getMessagingContext();
+      if (!contextResult.ok) {
+        return;
+      }
+      const profileResult = await contextResult.value.igClient.getUserProfile(
+        event.sender.id,
+        contextResult.value.accessToken,
+        contextResult.value.appSecretProof,
+      );
+      if (!profileResult.ok || !profileResult.value.username) {
+        return;
+      }
+
+      const p = profileResult.value;
+      const rawFollowerFlag = p.is_user_follow_business ?? p.isUserFollowingBusiness;
+      const followerStatus = rawFollowerFlag === true
+        ? "following"
+        : rawFollowerFlag === false
+          ? "not_following"
+          : "unknown";
+      await env.DB.prepare(
+        "UPDATE ig_users SET ig_username = ?, display_name = ?, follower_status = ?, updated_at = ? WHERE id = ?",
+      ).bind(p.username ?? null, p.name ?? p.username ?? null, followerStatus, Math.floor(Date.now() / 1000), userResult.userId).run();
+    })());
   }
 }
 
@@ -447,10 +610,9 @@ async function processChangeEvent(
     const { createTriggerActionExecutor } = await import("./trigger-action-executor.js");
     const { createEnrollmentService } = await import("./enrollment-service.js");
     const { createRealInstagramClient } = await import("@gramstep/ig-sdk");
-    const { getDecryptedToken } = await import("./auth-service.js");
-    const { generateAppSecretProof } = await import("./crypto.js");
+    const { getResolvedAppContext } = await import("./app-failover.js");
 
-    const triggerEngine = createTriggerEngine({ db });
+    const triggerEngine = createTriggerEngine({ db, kv: env.KV });
 
     const triggerEvent = {
       type: (field === "comments" ? "comment" : "live_comment") as import("@gramstep/shared").TriggerType,
@@ -464,18 +626,40 @@ async function processChangeEvent(
     );
 
     if (triggerResult.ok && triggerResult.value.length > 0) {
-      const tokenResult = await getDecryptedToken(accountId, {
-        db, kv: env.KV, encryptionKey: env.ENCRYPTION_KEY,
-      });
+      let appContext;
+      try {
+        appContext = await getResolvedAppContext(env, accountId);
+      } catch {
+        appContext = null;
+      }
 
       const enrollmentService = createEnrollmentService({
         db,
         dripWorkflow: env.DRIP_WORKFLOW,
+        sendImmediate: async ({ messageId, igUserId, recipientId, message }) => {
+          if (!appContext) {
+            return err(createAppError("INTERNAL_ERROR", "Access token not available"));
+          }
+          const sendResult = await igClient.sendMessage(
+            igUserId,
+            { recipientId, message },
+            appContext.appSecretProof,
+          );
+          if (!sendResult.ok) {
+            return err(createAppError("INSTAGRAM_API_ERROR", sendResult.error.message));
+          }
+          await db
+            .prepare("UPDATE message_logs SET delivery_status = 'sent', ig_message_id = ? WHERE id = ?")
+            .bind(sendResult.value.messageId, messageId)
+            .run()
+            .catch(() => undefined);
+          return ok(undefined);
+        },
       });
 
-      const igClient = tokenResult.ok
+      const igClient = appContext
         ? createRealInstagramClient({
-            accessToken: tokenResult.value,
+            accessToken: appContext.accessToken,
             apiVersion: env.META_API_VERSION,
           })
         : new (await import("@gramstep/ig-sdk")).MockInstagramClient();
@@ -494,10 +678,8 @@ async function processChangeEvent(
           accountId,
           igUserId: userResult.userId,
           triggerId: match.triggerId,
-          accessToken: tokenResult.ok ? tokenResult.value : "",
-          appSecretProof: tokenResult.ok
-            ? await generateAppSecretProof(tokenResult.value, env.META_APP_SECRET)
-            : "",
+          accessToken: appContext?.accessToken ?? "",
+          appSecretProof: appContext?.appSecretProof ?? "",
           recipientId: senderId,
           commentId,
           commentCreatedAt: now,

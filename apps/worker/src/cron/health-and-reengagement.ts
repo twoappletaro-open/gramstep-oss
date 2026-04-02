@@ -3,6 +3,7 @@ import { createReEngagementService } from "../services/re-engagement-service.js"
 import { createSloMonitorService, type SloCheckResult } from "../services/slo-monitor-service.js";
 import { createHealthMonitor, type HealthCheckResult } from "../services/health-monitor.js";
 import { handleCampaignTasks, type CampaignTaskResult } from "./campaign-dispatcher.js";
+import { handleBroadcastTasks, type BroadcastTaskResult } from "./broadcast-dispatcher.js";
 
 export type HealthAndReengagementResult = {
   reengagementProcessed: number;
@@ -10,6 +11,7 @@ export type HealthAndReengagementResult = {
   slo: SloCheckResult | null;
   healthCheck: HealthCheckResult | null;
   campaigns: CampaignTaskResult | null;
+  broadcasts: BroadcastTaskResult | null;
 };
 
 /**
@@ -66,11 +68,19 @@ export async function handleHealthAndReengagement(
     console.error("[CampaignDispatcher] handleCampaignTasks failed", e);
   }
 
+  let broadcasts: BroadcastTaskResult | null = null;
+  try {
+    broadcasts = await handleBroadcastTasks(env);
+  } catch (e) {
+    console.error("[BroadcastDispatcher] handleBroadcastTasks failed", e);
+  }
+
   return {
     reengagementProcessed: reEngagementResult.processed,
     reengagementErrors: reEngagementResult.errors,
     slo,
     healthCheck,
     campaigns,
+    broadcasts,
   };
 }

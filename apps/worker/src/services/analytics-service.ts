@@ -53,11 +53,23 @@ function safeRate(numerator: number, denominator: number): number {
 export async function getDeliveryMetrics(
   db: D1Database,
   accountId: string,
-  period: string,
+  query: string | { period?: string; date_from?: string; date_to?: string },
   now: number,
 ): Promise<Result<DeliveryMetrics, AppError>> {
-  const days = PERIOD_DAYS[period] ?? 30;
-  const periodStart = now - days * 86400;
+  const normalizedQuery = typeof query === "string" ? { period: query } : query;
+  let periodStart: number;
+  let periodEnd: number;
+
+  if (normalizedQuery.date_from && normalizedQuery.date_to) {
+    const [fromYear, fromMonth, fromDay] = normalizedQuery.date_from.split("-").map(Number);
+    const [toYear, toMonth, toDay] = normalizedQuery.date_to.split("-").map(Number);
+    periodStart = Math.floor(Date.UTC(fromYear ?? 0, (fromMonth ?? 1) - 1, fromDay ?? 1) / 1000);
+    periodEnd = Math.floor(Date.UTC(toYear ?? 0, (toMonth ?? 1) - 1, (toDay ?? 1) + 1) / 1000);
+  } else {
+    const days = PERIOD_DAYS[normalizedQuery.period ?? "30d"] ?? 30;
+    periodStart = now - days * 86400;
+    periodEnd = now + 1;
+  }
 
   const dailyResult = await executeQuery<DailyRow>(
     db,
@@ -67,11 +79,12 @@ export async function getDeliveryMetrics(
             SUM(CASE WHEN delivery_status = 'read' THEN 1 ELSE 0 END) AS read,
             SUM(CASE WHEN delivery_status = 'failed' THEN 1 ELSE 0 END) AS failed
      FROM message_logs
-     WHERE account_id = ? AND created_at >= ? AND direction = 'outbound' AND is_test = 0
+     WHERE account_id = ? AND created_at >= ? AND created_at < ? AND direction = 'outbound' AND is_test = 0
      GROUP BY DATE(created_at, 'unixepoch')
      ORDER BY date`,
     accountId,
     periodStart,
+    periodEnd,
   );
   if (!dailyResult.ok) {
     return err(createAppError("D1_ERROR", dailyResult.error.message));
@@ -87,14 +100,15 @@ export async function getDeliveryMetrics(
   // Window validity: active windows / total windows in period
   const windowResult = await executeFirst<WindowStats>(
     db,
-    `SELECT COUNT(*) AS total,
+     `SELECT COUNT(*) AS total,
             SUM(CASE WHEN window_expires_at > ? THEN 1 ELSE 0 END) AS active
      FROM messaging_windows
-     WHERE account_id = ? AND window_opened_at >= ?
+     WHERE account_id = ? AND window_opened_at >= ? AND window_opened_at < ?
      /* window_validity */`,
     now,
     accountId,
     periodStart,
+    periodEnd,
   );
 
   const windowStats: WindowStats = windowResult.ok && windowResult.value
@@ -104,13 +118,14 @@ export async function getDeliveryMetrics(
   // Scenario enrollment stats
   const enrollmentResult = await executeFirst<EnrollmentStats>(
     db,
-    `SELECT COUNT(*) AS total,
+     `SELECT COUNT(*) AS total,
             SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
             SUM(CASE WHEN status = 'window_expired' THEN 1 ELSE 0 END) AS window_expired
      FROM scenario_enrollments
-     WHERE account_id = ? AND started_at >= ?`,
+     WHERE account_id = ? AND started_at >= ? AND started_at < ?`,
     accountId,
     periodStart,
+    periodEnd,
   );
 
   const enrollStats: EnrollmentStats = enrollmentResult.ok && enrollmentResult.value
@@ -121,12 +136,14 @@ export async function getDeliveryMetrics(
   const clickCvResult = await executeFirst<ClickCvStats>(
     db,
     `SELECT
-       (SELECT COUNT(*) FROM link_clicks WHERE account_id = ? AND clicked_at >= ?) AS click_count,
-       (SELECT COUNT(*) FROM conversion_events WHERE account_id = ? AND created_at >= ?) AS cv_event_count`,
+       (SELECT COUNT(*) FROM link_clicks WHERE account_id = ? AND clicked_at >= ? AND clicked_at < ?) AS click_count,
+       (SELECT COUNT(*) FROM conversion_events WHERE account_id = ? AND created_at >= ? AND created_at < ?) AS cv_event_count`,
     accountId,
     periodStart,
+    periodEnd,
     accountId,
     periodStart,
+    periodEnd,
   );
 
   const clickCv: ClickCvStats = clickCvResult.ok && clickCvResult.value

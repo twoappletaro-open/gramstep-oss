@@ -63,8 +63,8 @@ export function UserDetail({
   const [newTag, setNewTag] = useState("");
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState("");
-  const [resettingFirstTriggerHistory, setResettingFirstTriggerHistory] = useState(false);
-  const [firstTriggerResetMessage, setFirstTriggerResetMessage] = useState<string | null>(null);
+  const [resettingTestState, setResettingTestState] = useState(false);
+  const [testStateResetMessage, setTestStateResetMessage] = useState<string | null>(null);
   const [togglingTestAccount, setTogglingTestAccount] = useState(false);
   const [testAccountMessage, setTestAccountMessage] = useState<string | null>(null);
 
@@ -111,7 +111,7 @@ export function UserDetail({
 
   async function handleRemoveTag(tagId: string) {
     if (!user) return;
-    await client.users.removeTag(userId, tagId);
+    await client.users.removeTag(userId, accountId, tagId);
     void load();
   }
 
@@ -135,28 +135,45 @@ export function UserDetail({
     void load();
   }
 
-  async function handleResetFirstTriggerHistory() {
+  async function handleResetTestUserState() {
     if (!user) return;
     const shouldContinue = window.confirm(
-      "初回トリガー履歴をクリアします。同じアカウントで初回送信テストを繰り返すための操作です。通常ユーザーには使わず、テストユーザーだけで実行してください。",
+      "このテストユーザーの状態を初期化します。トリガー発火履歴、シナリオ進行、アンケート進行、タグ、スコア、手動対応状態などをまとめてリセットし、同じアカウントで新規ユーザー相当のテストをやり直せるようにします。",
     );
     if (!shouldContinue) return;
 
-    setResettingFirstTriggerHistory(true);
-    setFirstTriggerResetMessage(null);
-    const result = await client.users.resetFirstTriggerHistory(userId, accountId);
+    setResettingTestState(true);
+    setTestStateResetMessage(null);
+    const result = await client.users.resetTestUserState(userId, accountId);
     if (result.ok) {
-      setFirstTriggerResetMessage(`初回トリガー履歴を ${result.value.cleared} 件クリアしました。`);
+      const total = Object.values(result.value.reset_counts).reduce((sum, count) => sum + count, 0);
+      const formSessions = result.value.reset_counts.form_sessions ?? 0;
+      const formAnswers = result.value.reset_counts.form_answers ?? 0;
+      const reminderEnrollments = result.value.reset_counts.reminder_enrollments ?? 0;
+      const reminderDeliveryLogs = result.value.reset_counts.reminder_delivery_logs ?? 0;
+      const campaignEntries = result.value.reset_counts.campaign_entries ?? 0;
+      const campaignDispatches = result.value.reset_counts.campaign_dispatches ?? 0;
+      const detail = [
+        `会話ログ ${result.value.reset_counts.message_logs ?? 0}`,
+        `トリガー ${result.value.reset_counts.trigger_fire_logs}`,
+        `シナリオ ${result.value.reset_counts.scenario_enrollments}`,
+        `アンケート ${formSessions + formAnswers}`,
+        `タグ ${result.value.reset_counts.ig_user_tags}`,
+        `リマインダー ${reminderEnrollments + reminderDeliveryLogs}`,
+        `キャンペーン ${campaignEntries + campaignDispatches}`,
+        `Workflow停止 ${result.value.terminated_workflows}`,
+      ].join(" / ");
+      setTestStateResetMessage(`テストユーザーを初期化しました。合計 ${total} 件をリセットしました。${detail}`);
     } else {
-      setFirstTriggerResetMessage(result.error.message);
+      setTestStateResetMessage(result.error.message);
     }
-    setResettingFirstTriggerHistory(false);
+    setResettingTestState(false);
   }
 
   async function handleRegisterTestAccount() {
     if (!user) return;
     const shouldContinue = window.confirm(
-      "このユーザーをテストユーザーとして登録します。同じアカウントで初回送信テストを繰り返したい場合にのみ使ってください。",
+      "このユーザーをテストユーザーとして登録します。同じアカウントで新規ユーザー相当のテストを繰り返したい場合にのみ使ってください。",
     );
     if (!shouldContinue) return;
 
@@ -175,7 +192,7 @@ export function UserDetail({
       );
       setTestAccountMessage(
         result.value.changed
-          ? "テストユーザーに登録しました。初回トリガー履歴のクリアが使えます。"
+          ? "テストユーザーに登録しました。この詳細画面からテストユーザー初期化が使えます。"
           : "このユーザーはすでにテストユーザーです。",
       );
     } else {
@@ -187,7 +204,7 @@ export function UserDetail({
   async function handleUnregisterTestAccount() {
     if (!user) return;
     const shouldContinue = window.confirm(
-      "テストユーザー登録を解除します。解除すると初回トリガー履歴のクリアは使えなくなります。",
+      "テストユーザー登録を解除します。解除するとテストユーザー初期化は使えなくなります。",
     );
     if (!shouldContinue) return;
 
@@ -209,7 +226,7 @@ export function UserDetail({
           ? "テストユーザー登録を解除しました。通常ユーザーとして扱われます。"
           : "このユーザーはテストユーザー登録されていません。",
       );
-      setFirstTriggerResetMessage(null);
+      setTestStateResetMessage(null);
     } else {
       setTestAccountMessage(result.error.message);
     }
@@ -396,10 +413,9 @@ export function UserDetail({
         <Card className="p-4 space-y-3 md:col-span-2">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">初回トリガー送信テスト</h2>
+              <h2 className="text-lg font-semibold">テストユーザー初期化</h2>
               <p className="text-sm text-muted-foreground">
-                同じアカウントで「初回のみ」の自動返信テストを繰り返すために、このユーザーの
-                `trigger_fire_logs` をクリアします。
+                同じアカウントで新規ユーザー相当のテストを繰り返せるように、このユーザーのテスト用状態をまとめて初期化します。
               </p>
             </div>
             <Badge variant={user.is_test_account ? "default" : "secondary"}>
@@ -408,7 +424,7 @@ export function UserDetail({
           </div>
 
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            テストユーザー専用の操作です。通常ユーザーでは使わないでください。初回送信テストをやり直したい時だけ実行します。
+            テストユーザー専用の操作です。通常ユーザーでは使わないでください。会話ログ、トリガー発火履歴、シナリオ進行、アンケート進行、タグ、スコア、手動対応状態などをまとめて戻します。
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -434,14 +450,14 @@ export function UserDetail({
             <Button
               type="button"
               variant="outline"
-              onClick={handleResetFirstTriggerHistory}
-              disabled={resettingFirstTriggerHistory || togglingTestAccount || !user.is_test_account}
+              onClick={handleResetTestUserState}
+              disabled={resettingTestState || togglingTestAccount || !user.is_test_account}
             >
-              {resettingFirstTriggerHistory ? "クリア中..." : "初回トリガー履歴をクリア"}
+              {resettingTestState ? "初期化中..." : "テストユーザーを初期化"}
             </Button>
             {!user.is_test_account && (
               <span className="text-sm text-muted-foreground">
-                先にこの詳細画面でテストユーザー登録すると、同じアカウントで初回送信テストを繰り返せます。
+                先にこの詳細画面でテストユーザー登録すると、同じアカウントで新規ユーザー相当のテストを繰り返せます。
               </span>
             )}
           </div>
@@ -449,8 +465,8 @@ export function UserDetail({
           {testAccountMessage && (
             <p className="text-sm text-muted-foreground">{testAccountMessage}</p>
           )}
-          {firstTriggerResetMessage && (
-            <p className="text-sm text-muted-foreground">{firstTriggerResetMessage}</p>
+          {testStateResetMessage && (
+            <p className="text-sm text-muted-foreground">{testStateResetMessage}</p>
           )}
         </Card>
       </div>

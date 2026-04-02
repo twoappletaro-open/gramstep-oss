@@ -388,7 +388,7 @@ const openApiSpec = {
           delay_seconds: { type: "integer", minimum: 0, default: 0 },
           message_type: {
             type: "string",
-            enum: ["text", "image", "generic", "quick_reply"],
+            enum: ["text", "image", "generic", "rich_menu", "quick_reply"],
           },
           message_payload: { type: "string" },
         },

@@ -175,6 +175,9 @@ export function SurveyList({ accountId }: { accountId: string }) {
                 </TableCell>
                 <TableCell>{formatDate(survey.created_at)}</TableCell>
                 <TableCell className="text-right">
+                  <Link href={`/${locale}/surveys/${survey.id}/report`}>
+                    <Button variant="ghost" size="sm">レポート</Button>
+                  </Link>
                   <Button type="button" variant="ghost" size="sm" onClick={() => handleExport(survey.id, survey.name)}>
                     CSV
                   </Button>

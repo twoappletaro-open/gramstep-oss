@@ -27,6 +27,8 @@ interface RawGenericElement {
   subtitle?: string;
   imageUrl?: string;
   image_url?: string;
+  defaultAction?: { type?: string; url?: string };
+  default_action?: { type?: string; url?: string };
   buttons?: RawButton[];
 }
 interface RawButton {
@@ -44,11 +46,19 @@ interface RawQuickReply {
 
 function normalizePayload(raw: MessagePayload): MessagePayload {
   if (raw.type === "generic") {
+    const rawPayload = raw as unknown as MessagePayload & { imageAspectRatio?: "horizontal" | "square"; image_aspect_ratio?: "horizontal" | "square" };
     const rawElements = (raw.elements ?? []) as unknown as RawGenericElement[];
     const elements: GenericElement[] = rawElements.map((el) => ({
       title: el.title,
       subtitle: el.subtitle,
       imageUrl: el.imageUrl ?? el.image_url,
+      defaultAction: (() => {
+        const action = el.defaultAction ?? el.default_action;
+        if (action?.type === "web_url" && action.url) {
+          return { type: "web_url" as const, url: action.url };
+        }
+        return undefined;
+      })(),
       buttons: (el.buttons ?? [])
         .filter((btn) => btn.title && btn.title.length > 0)
         .map((btn): Button =>
@@ -57,7 +67,11 @@ function normalizePayload(raw: MessagePayload): MessagePayload {
             : { type: "postback", title: btn.title, payload: btn.payload || btn.title },
         ),
     }));
-    return { type: "generic", elements };
+    return {
+      type: "generic",
+      elements,
+      imageAspectRatio: rawPayload.imageAspectRatio ?? rawPayload.image_aspect_ratio,
+    };
   }
   if (raw.type === "quick_reply") {
     const rawReplies = (raw.quickReplies ?? (raw as unknown as { quick_replies?: RawQuickReply[] }).quick_replies) ?? [];
@@ -95,6 +109,12 @@ function buildMessageBody(req: SendMessageRequest): Record<string, unknown> {
         body.message = { attachment: { type: "image", payload: { url: payload.url } } };
       }
       break;
+    case "video":
+      body.message = { attachment: { type: "video", payload: { url: payload.url } } };
+      break;
+    case "audio":
+      body.message = { attachment: { type: "audio", payload: { url: payload.url } } };
+      break;
     case "generic": {
       const elements = payload.elements.map((el) => {
         const mapped: Record<string, unknown> = {
@@ -102,6 +122,9 @@ function buildMessageBody(req: SendMessageRequest): Record<string, unknown> {
           subtitle: el.subtitle,
           image_url: el.imageUrl,
         };
+        if (el.defaultAction?.type === "web_url" && el.defaultAction.url) {
+          mapped.default_action = { type: "web_url", url: el.defaultAction.url };
+        }
         // Only include buttons if non-empty with valid titles
         const validButtons = (el.buttons ?? []).filter((btn) => btn.title.length > 0);
         if (validButtons.length > 0) {
@@ -118,6 +141,7 @@ function buildMessageBody(req: SendMessageRequest): Record<string, unknown> {
           type: "template",
           payload: {
             template_type: "generic",
+            image_aspect_ratio: payload.imageAspectRatio ?? "square",
             elements,
           },
         },

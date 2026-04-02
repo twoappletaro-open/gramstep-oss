@@ -36,6 +36,11 @@ const STEPS: ReadonlyArray<{ id: string; name: string; fn: StepFn }> = [
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  if (args.includes("--help") || args.includes("-h")) {
+    showHelp();
+    return;
+  }
+
   const fresh = args.includes("--fresh");
   const command = args.find((a) => !a.startsWith("-")) ?? "setup";
 
@@ -43,8 +48,6 @@ async function main(): Promise<void> {
     await setup(fresh);
   } else if (command === "redeploy") {
     await redeploy();
-  } else if (command === "--help" || command === "-h") {
-    showHelp();
   } else {
     throw new Error(`Unknown command: ${command}`);
   }

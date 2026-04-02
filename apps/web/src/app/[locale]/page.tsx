@@ -19,6 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { getApiUrl } from "../../lib/api-client";
+import { AnalyticsOverview } from "../../components/dashboard/analytics-overview";
 
 interface HealthData {
   status: string;
@@ -36,6 +37,7 @@ function StatusDot({ ok }: { ok: boolean }) {
 
 export default function DashboardPage() {
   const [health, setHealth] = useState<HealthData | null>(null);
+  const [accountId, setAccountId] = useState("");
   const pathname = usePathname();
   const locale = pathname.split("/")[1] ?? "ja";
   const t = useTranslations("dashboard");
@@ -47,6 +49,11 @@ export default function DashboardPage() {
       .then((r) => r.json() as Promise<HealthData>)
       .then(setHealth)
       .catch(() => setHealth(null));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setAccountId(localStorage.getItem("gramstep_account_id") ?? "");
   }, []);
 
   const checks: { key: string; label: string; icon: Icon }[] = [
@@ -106,6 +113,8 @@ export default function DashboardPage() {
           })}
         </div>
       </section>
+
+      <AnalyticsOverview accountId={accountId} locale={locale} />
 
       {/* Quick links */}
       <section>

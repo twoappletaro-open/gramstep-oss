@@ -6,6 +6,7 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Label } from "../ui/label";
 import { Button } from "../ui/button";
+import { Select } from "../ui/select";
 
 interface ManualTokenFormProps {
   apiUrl: string;
@@ -16,11 +17,13 @@ interface ManualTokenResponse {
   ok: boolean;
   username?: string | null;
   ig_user_id?: string;
+  slot?: "primary" | "secondary";
 }
 
 export function ManualTokenForm({ apiUrl, onUpdated }: ManualTokenFormProps) {
   const [igUserId, setIgUserId] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [slot, setSlot] = useState<"primary" | "secondary">("primary");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -46,6 +49,7 @@ export function ManualTokenForm({ apiUrl, onUpdated }: ManualTokenFormProps) {
         body: JSON.stringify({
           ig_user_id: igUserId.trim(),
           access_token: accessToken.trim(),
+          slot,
         }),
       });
 
@@ -60,7 +64,7 @@ export function ManualTokenForm({ apiUrl, onUpdated }: ManualTokenFormProps) {
 
       setAccessToken("");
       setMessage(
-        `トークンを更新しました${"username" in body && body.username ? ` (@${body.username})` : ""}`,
+        `${slot === "primary" ? "メイン" : "サブ"}のトークンを更新しました${"username" in body && body.username ? ` (@${body.username})` : ""}`,
       );
 
       await onUpdated?.();
@@ -75,11 +79,23 @@ export function ManualTokenForm({ apiUrl, onUpdated }: ManualTokenFormProps) {
     <Card>
       <CardHeader>
         <CardTitle>手動トークン更新</CardTitle>
-        <CardDescription>
-          Meta側で権限を追加して新しいアクセストークンを発行した場合、ここから上書きできます。
-        </CardDescription>
+      <CardDescription>
+          Meta側で発行したアクセストークンを、メインまたはサブの接続先に保存できます。
+      </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="token_slot">保存先</Label>
+          <Select
+            id="token_slot"
+            value={slot}
+            onChange={(e) => setSlot(e.target.value as "primary" | "secondary")}
+          >
+            <option value="primary">メインアプリ</option>
+            <option value="secondary">サブアプリ</option>
+          </Select>
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="ig_user_id">IG User ID</Label>
           <Input
@@ -110,7 +126,7 @@ export function ManualTokenForm({ apiUrl, onUpdated }: ManualTokenFormProps) {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          入力したトークンは保存後に再表示されません。IG User ID は Meta のトークン生成画面に表示される値を使ってください。
+          入力したトークンは保存後に再表示されません。サブに保存する場合は、先に `アプリ切替` でサブアプリ情報を登録してください。
         </p>
       </CardContent>
     </Card>

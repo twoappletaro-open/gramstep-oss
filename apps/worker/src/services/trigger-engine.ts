@@ -57,7 +57,13 @@ export interface TriggerEngineService {
 
 export interface TriggerEngineDeps {
   db: D1Database;
+  kv?: KVNamespace;
 }
+
+const TRIGGER_CACHE_PREFIX = "trigger_cache:";
+const TRIGGER_CACHE_TTL_SECONDS = 60;
+const TRIGGER_MEMORY_CACHE_TTL_MS = 30_000;
+const triggerMemoryCache = new Map<string, { triggers: TriggerView[]; expiresAt: number }>();
 
 function toTriggerView(row: Trigger): TriggerView {
   const keywords: string[] = JSON.parse(row.keywords);
@@ -130,7 +136,62 @@ function isWithinSchedule(schedule: ScheduleConfig, now: Date): boolean {
 }
 
 export function createTriggerEngine(deps: TriggerEngineDeps): TriggerEngineService {
-  const { db } = deps;
+  const { db, kv } = deps;
+
+  function setMemoryCache(accountId: string, triggers: TriggerView[]): void {
+    triggerMemoryCache.set(accountId, {
+      triggers,
+      expiresAt: Date.now() + TRIGGER_MEMORY_CACHE_TTL_MS,
+    });
+  }
+
+  async function invalidateTriggerCache(accountId: string): Promise<void> {
+    triggerMemoryCache.delete(accountId);
+    if (!kv) return;
+    await kv.delete(`${TRIGGER_CACHE_PREFIX}${accountId}`);
+  }
+
+  async function loadActiveTriggers(accountId: string): Promise<Result<TriggerView[], AppError>> {
+    const cached = triggerMemoryCache.get(accountId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return ok(cached.triggers);
+    }
+
+    if (kv) {
+      try {
+        const kvValue = await kv.get(`${TRIGGER_CACHE_PREFIX}${accountId}`);
+        if (kvValue) {
+          const parsed = JSON.parse(kvValue) as TriggerView[];
+          setMemoryCache(accountId, parsed);
+          return ok(parsed);
+        }
+      } catch {
+        // Cache read failure should not block trigger evaluation.
+      }
+    }
+
+    const result = await db
+      .prepare("SELECT * FROM triggers WHERE account_id = ? AND is_active = 1 ORDER BY created_at DESC")
+      .bind(accountId)
+      .all<Trigger>();
+
+    const triggers = (result.results ?? []).map(toTriggerView);
+    setMemoryCache(accountId, triggers);
+
+    if (kv) {
+      try {
+        await kv.put(
+          `${TRIGGER_CACHE_PREFIX}${accountId}`,
+          JSON.stringify(triggers),
+          { expirationTtl: TRIGGER_CACHE_TTL_SECONDS },
+        );
+      } catch {
+        // Cache write failure should not block trigger evaluation.
+      }
+    }
+
+    return ok(triggers);
+  }
 
   return {
     async createTrigger(accountId, input) {
@@ -163,6 +224,8 @@ export function createTriggerEngine(deps: TriggerEngineDeps): TriggerEngineServi
           now,
         )
         .run();
+
+      await invalidateTriggerCache(accountId);
 
       return ok({
         id,
@@ -262,6 +325,8 @@ export function createTriggerEngine(deps: TriggerEngineDeps): TriggerEngineServi
         );
       }
 
+      await invalidateTriggerCache(accountId);
+
       const updated = await db
         .prepare("SELECT * FROM triggers WHERE id = ? AND account_id = ?")
         .bind(triggerId, accountId)
@@ -290,22 +355,21 @@ export function createTriggerEngine(deps: TriggerEngineDeps): TriggerEngineServi
         .bind(triggerId, accountId)
         .run();
 
+      await invalidateTriggerCache(accountId);
       return ok(undefined);
     },
 
     async evaluateTriggers(event, accountId, igUserId, now?) {
       const currentTime = now ?? new Date();
-      const result = await db
-        .prepare("SELECT * FROM triggers WHERE account_id = ? AND is_active = 1 ORDER BY created_at DESC")
-        .bind(accountId)
-        .all<Trigger>();
+      const triggersResult = await loadActiveTriggers(accountId);
+      if (!triggersResult.ok) {
+        return err(triggersResult.error);
+      }
 
-      const triggers = result.results ?? [];
+      const triggers = triggersResult.value;
       const matches: TriggerMatch[] = [];
 
-      for (const trigger of triggers) {
-        const view = toTriggerView(trigger);
-
+      for (const view of triggers) {
         // Check trigger type matches event type
         if (view.triggerType !== event.type) continue;
 
@@ -314,12 +378,12 @@ export function createTriggerEngine(deps: TriggerEngineDeps): TriggerEngineServi
 
         // Check fire mode
         if (view.fireMode === "once" || view.fireMode === "first_only") {
-          const countResult = await db
-            .prepare("SELECT COUNT(*) as count FROM trigger_fire_logs WHERE trigger_id = ? AND ig_user_id = ?")
-            .bind(trigger.id, igUserId)
-            .first<{ count: number }>();
+          const existingFire = await db
+            .prepare("SELECT id FROM trigger_fire_logs WHERE trigger_id = ? AND ig_user_id = ? LIMIT 1")
+            .bind(view.id, igUserId)
+            .first<{ id: string }>();
 
-          if (countResult && countResult.count > 0) continue;
+          if (existingFire) continue;
         }
 
         // Check keyword matching
@@ -327,7 +391,7 @@ export function createTriggerEngine(deps: TriggerEngineDeps): TriggerEngineServi
         if (matched === undefined) continue;
 
         matches.push({
-          triggerId: trigger.id,
+          triggerId: view.id,
           triggerType: view.triggerType,
           matchedKeyword: matched || undefined,
           actions: view.actions,

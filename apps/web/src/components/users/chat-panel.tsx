@@ -8,6 +8,8 @@ import { Input } from "../ui/input";
 import { Card } from "../ui/card";
 import { Select } from "../ui/select";
 import { Textarea } from "../ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { Label } from "../ui/label";
 import { createApiClient, getApiUrl } from "../../lib/api-client";
 import {
   formatConversationStatus,
@@ -15,6 +17,7 @@ import {
   formatTimestamp,
 } from "../../lib/user-helpers";
 import type { ConversationStatus } from "@gramstep/shared";
+import { cn } from "../../lib/utils";
 
 type Message = {
   id: string;
@@ -37,6 +40,20 @@ type UserInfo = {
   assigned_operator_id: string | null;
 };
 
+type PackageOption = {
+  id: string;
+  name: string;
+};
+
+type UploadedMedia = {
+  url: string;
+  r2Key: string;
+  contentType: string;
+  name: string;
+};
+
+type ComposerMode = "text" | "image" | "video" | "audio" | "package";
+
 export function ChatPanel({
   userId,
   accountId,
@@ -53,6 +70,12 @@ export function ChatPanel({
   const [messageText, setMessageText] = useState("");
   const [sendError, setSendError] = useState("");
   const [statusValue, setStatusValue] = useState<string>("unread");
+  const [composerMode, setComposerMode] = useState<ComposerMode>("text");
+  const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [packageOptions, setPackageOptions] = useState<PackageOption[]>([]);
+  const [selectedPackageId, setSelectedPackageId] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const apiUrl =
@@ -96,19 +119,129 @@ export function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (!accountId) return;
+    client.packages.list(accountId).then((result) => {
+      if (!result.ok) return;
+      const options = (result.value as Array<{ id?: string; name?: string }>)
+        .filter((pkg): pkg is { id: string; name: string } => Boolean(pkg.id && pkg.name))
+        .map((pkg) => ({ id: pkg.id, name: pkg.name }));
+      setPackageOptions(options);
+    }).catch(() => undefined);
+  }, [accountId]);
+
+  async function uploadMedia(file: File) {
+    setUploadingMedia(true);
+    setSendError("");
+    try {
+      const token = typeof sessionStorage !== "undefined" ? sessionStorage.getItem("accessToken") ?? "" : "";
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${apiUrl}/api/media/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "x-account-id": accountId,
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setSendError(body.error ?? t("sendFailed"));
+        return;
+      }
+
+      const data = await res.json() as { url: string; r2Key: string; contentType: string };
+      setUploadedMedia({
+        url: data.url,
+        r2Key: data.r2Key,
+        contentType: data.contentType,
+        name: file.name,
+      });
+    } catch (error: unknown) {
+      setSendError(error instanceof Error ? error.message : t("sendFailed"));
+    } finally {
+      setUploadingMedia(false);
+    }
+  }
+
+  function resetComposerState() {
+    setMessageText("");
+    setUploadedMedia(null);
+    setSelectedPackageId("");
+    setScheduledAt("");
+  }
+
   async function handleSend() {
-    if (!messageText.trim() || sending) return;
+    if (sending) return;
     setSending(true);
     setSendError("");
 
-    const result = await client.chats.send(userId, accountId, {
-      ig_user_id: userId,
-      message_type: "text",
-      content: messageText.trim(),
-    });
+    let result;
+    if (composerMode === "text") {
+      if (!messageText.trim()) {
+        setSending(false);
+        return;
+      }
+      result = await client.chats.send(userId, accountId, {
+        ig_user_id: userId,
+        message_type: "text",
+        content: messageText.trim(),
+      });
+    } else if (composerMode === "package") {
+      if (!selectedPackageId) {
+        setSendError("パッケージを選択してください");
+        setSending(false);
+        return;
+      }
+
+      let scheduledAtSeconds: number | undefined;
+      if (scheduledAt) {
+        const nextTime = Math.floor(new Date(scheduledAt).getTime() / 1000);
+        const now = Math.floor(Date.now() / 1000);
+        if (!Number.isFinite(nextTime) || nextTime <= now) {
+          setSendError("予約時刻は現在より後に設定してください");
+          setSending(false);
+          return;
+        }
+        if (nextTime > now + (7 * 24 * 60 * 60)) {
+          setSendError("予約送信は7日以内で設定してください");
+          setSending(false);
+          return;
+        }
+        scheduledAtSeconds = nextTime;
+      }
+
+      result = await client.chats.send(userId, accountId, {
+        ig_user_id: userId,
+        message_type: "package",
+        package_id: selectedPackageId,
+        ...(scheduledAtSeconds ? { scheduled_at: scheduledAtSeconds } : {}),
+      });
+    } else {
+      if (!uploadedMedia) {
+        setSendError("先にファイルをアップロードしてください");
+        setSending(false);
+        return;
+      }
+      if (!isUploadedMediaCompatible(composerMode, uploadedMedia.contentType)) {
+        setSendError(`${formatModeLabel(composerMode)}に対応したファイルをアップロードしてください`);
+        setSending(false);
+        return;
+      }
+
+      result = await client.chats.send(userId, accountId, {
+        ig_user_id: userId,
+        message_type: composerMode,
+        media_url: uploadedMedia.url,
+        media_r2_key: uploadedMedia.r2Key,
+      });
+    }
 
     if (result.ok) {
-      setMessageText("");
+      resetComposerState();
       await loadMessages();
     } else {
       setSendError(result.error.message || t("sendFailed"));
@@ -223,7 +356,7 @@ export function ChatPanel({
                     : "bg-muted"
                 }`}
               >
-                <p>{msg.content ?? `[${msg.message_type}]`}</p>
+                {renderMessageBody(msg, apiUrl)}
                 <div
                   className={`flex items-center gap-1 mt-1 text-xs ${
                     msg.direction === "outbound"
@@ -258,30 +391,8 @@ export function ChatPanel({
 
       {/* Input area */}
       <div className="border-t p-4">
-        {isHumanMode ? (
-          <div className="flex gap-2">
-            <Textarea
-              placeholder={t("messagePlaceholder")}
-              value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void handleSend();
-                }
-              }}
-              className="flex-1 min-h-[40px] max-h-[120px] resize-none"
-              rows={1}
-            />
-            <Button
-              onClick={handleSend}
-              disabled={!messageText.trim() || sending}
-            >
-              {sending ? tCommon("loading") : t("send")}
-            </Button>
-          </div>
-        ) : (
-          <Card className="p-3 text-center text-sm text-muted-foreground">
+        {!isHumanMode && (
+          <Card className="mb-3 p-3 text-center text-sm text-muted-foreground">
             {t("botControlMessage")}
             <Button
               variant="link"
@@ -293,17 +404,131 @@ export function ChatPanel({
             </Button>
           </Card>
         )}
-        {isHumanMode && (
-          <>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("humanAgentNote")}
-            </p>
-            {sendError && (
-              <p className="text-xs text-destructive mt-1">
-                {sendError}
-              </p>
-            )}
-          </>
+
+        <div className={cn("space-y-3", !isHumanMode && "opacity-60")}>
+          <Tabs value={composerMode} onValueChange={(value) => {
+            setComposerMode(value as ComposerMode);
+            setSendError("");
+          }}>
+            <TabsList className="w-full justify-start overflow-x-auto">
+              <TabsTrigger value="text">テキスト</TabsTrigger>
+              <TabsTrigger value="image">画像</TabsTrigger>
+              <TabsTrigger value="video">動画</TabsTrigger>
+              <TabsTrigger value="audio">音声</TabsTrigger>
+              <TabsTrigger value="package">パッケージ</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="text" className="mt-3">
+              <Textarea
+                placeholder={t("messagePlaceholder")}
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && isHumanMode) {
+                    e.preventDefault();
+                    void handleSend();
+                  }
+                }}
+                className="min-h-[72px] resize-none"
+                rows={3}
+                disabled={!isHumanMode}
+              />
+            </TabsContent>
+
+            {(["image", "video", "audio"] as const).map((mode) => (
+              <TabsContent key={mode} value={mode} className="mt-3 space-y-3">
+                <div className="space-y-2">
+                  <Label>{formatModeLabel(mode)}</Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className={cn(
+                      "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm",
+                      isHumanMode ? "cursor-pointer hover:bg-muted/50" : "cursor-not-allowed bg-muted/30",
+                    )}>
+                      <span>{uploadingMedia ? "アップロード中..." : `${formatModeLabel(mode)}を選択`}</span>
+                      <input
+                        type="file"
+                        accept={acceptForMode(mode)}
+                        className="hidden"
+                        disabled={uploadingMedia || !isHumanMode}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          void uploadMedia(file);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </label>
+                    <span className="text-xs text-muted-foreground">
+                      {helperTextForMode(mode)}
+                    </span>
+                  </div>
+                  {uploadedMedia && (
+                    <div className={cn(
+                      "rounded-md border px-3 py-2 text-sm",
+                      isUploadedMediaCompatible(mode, uploadedMedia.contentType)
+                        ? "border-border bg-muted/30"
+                        : "border-destructive/40 bg-destructive/5",
+                    )}>
+                      <p className="font-medium">{uploadedMedia.name}</p>
+                      <p className="text-xs text-muted-foreground">{uploadedMedia.contentType}</p>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            ))}
+
+            <TabsContent value="package" className="mt-3 space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="manual-package">送信するパッケージ</Label>
+                <Select
+                  id="manual-package"
+                  value={selectedPackageId}
+                  onChange={(e) => setSelectedPackageId(e.target.value)}
+                  disabled={!isHumanMode}
+                >
+                  <option value="">パッケージを選択</option>
+                  {packageOptions.map((pkg) => (
+                    <option key={pkg.id} value={pkg.id}>
+                      {pkg.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="manual-schedule">配信予約日時</Label>
+                <Input
+                  id="manual-schedule"
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  disabled={!isHumanMode}
+                />
+                <p className="text-xs text-muted-foreground">
+                  空欄なら即時送信します。予約送信は7日以内です。
+                </p>
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSend}
+              disabled={!isHumanMode || sending || uploadingMedia}
+            >
+              {sending ? tCommon("loading") : t("send")}
+            </Button>
+          </div>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-1">
+          {isHumanMode
+            ? t("humanAgentNote")
+            : "送信するには先に「有人対応を開始」を押してください。"}
+        </p>
+        {sendError && (
+          <p className="text-xs text-destructive mt-1">
+            {sendError}
+          </p>
         )}
       </div>
     </div>
@@ -316,4 +541,74 @@ function capitalize(s: string): string {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join("");
+}
+
+function acceptForMode(mode: Exclude<ComposerMode, "text" | "package">): string {
+  if (mode === "image") {
+    return "image/jpeg,image/png,image/gif,image/webp";
+  }
+  if (mode === "video") {
+    return "video/mp4";
+  }
+  return "audio/mpeg,audio/mp4";
+}
+
+function helperTextForMode(mode: Exclude<ComposerMode, "text" | "package">): string {
+  if (mode === "image") {
+    return "JPG, PNG, GIF, WebP";
+  }
+  if (mode === "video") {
+    return "MP4";
+  }
+  return "MP3, M4A";
+}
+
+function formatModeLabel(mode: Exclude<ComposerMode, "text" | "package">): string {
+  if (mode === "image") return "画像";
+  if (mode === "video") return "動画";
+  return "音声";
+}
+
+function isUploadedMediaCompatible(
+  mode: Exclude<ComposerMode, "text" | "package">,
+  contentType: string,
+): boolean {
+  if (mode === "image") return contentType.startsWith("image/");
+  if (mode === "video") return contentType.startsWith("video/");
+  return contentType.startsWith("audio/");
+}
+
+function renderMessageBody(message: Message, apiUrl: string) {
+  const mediaUrl = message.media_r2_key
+    ? `${apiUrl}/api/media/${message.media_r2_key}`
+    : null;
+
+  if (message.message_type === "image" && mediaUrl) {
+    return (
+      <div className="space-y-2">
+        <img src={mediaUrl} alt="sent media" className="max-h-64 rounded-md object-cover" />
+        {message.content && <p>{message.content}</p>}
+      </div>
+    );
+  }
+
+  if (message.message_type === "video" && mediaUrl) {
+    return (
+      <div className="space-y-2">
+        <video src={mediaUrl} controls className="max-h-64 rounded-md" />
+        {message.content && <p>{message.content}</p>}
+      </div>
+    );
+  }
+
+  if (message.message_type === "audio" && mediaUrl) {
+    return (
+      <div className="space-y-2">
+        <audio src={mediaUrl} controls className="w-full" />
+        {message.content && <p>{message.content}</p>}
+      </div>
+    );
+  }
+
+  return <p>{message.content ?? `[${message.message_type}]`}</p>;
 }

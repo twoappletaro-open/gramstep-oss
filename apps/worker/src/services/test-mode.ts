@@ -102,6 +102,17 @@ function formatDuration(totalSeconds: number): string {
 }
 
 function actionToDescription(action: TriggerAction): { action: string; target: string } {
+  if ((action as { type: string }).type === "send_template_by_follower_status") {
+    const followerAction = action as unknown as {
+      followerTemplateId: string;
+      nonFollowerTemplateId: string;
+    };
+    return {
+      action: "send_template_by_follower_status",
+      target: `${followerAction.followerTemplateId} / ${followerAction.nonFollowerTemplateId}`,
+    };
+  }
+
   switch (action.type) {
     case "send_template":
       return { action: "send_template", target: action.templateId };
@@ -124,6 +135,8 @@ function actionToDescription(action: TriggerAction): { action: string; target: s
     case "enter_campaign":
       return { action: "enter_campaign", target: action.campaignId };
   }
+
+  return { action: (action as { type: string }).type, target: "" };
 }
 
 // --- Factory ---

@@ -277,7 +277,7 @@ adminAuthRoutes.post("/dev-seed", async (c) => {
       accountId: "acc_default",
       operatorId: id,
       workerOrigin,
-      dashboardUrl: c.env.DASHBOARD_URL,
+      dashboardUrl: c.env.DASHBOARD_URL ?? workerOrigin,
       now,
     });
 

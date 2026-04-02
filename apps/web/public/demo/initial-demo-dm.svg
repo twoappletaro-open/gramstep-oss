@@ -1,0 +1,28 @@
+<svg width="1080" height="1080" viewBox="0 0 1080 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="74" x2="998" y2="1010" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF6D8"/>
+      <stop offset="1" stop-color="#FFD7C7"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="190" y1="160" x2="875" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#112338"/>
+      <stop offset="1" stop-color="#1C4067"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" rx="48" fill="url(#bg)"/>
+  <rect x="146" y="120" width="788" height="840" rx="40" fill="url(#panel)"/>
+  <rect x="206" y="196" width="250" height="18" rx="9" fill="#F8F5EF" fill-opacity="0.18"/>
+  <rect x="206" y="255" width="668" height="182" rx="30" fill="#F8F5EF" fill-opacity="0.08"/>
+  <rect x="244" y="300" width="188" height="48" rx="24" fill="#FFB26F"/>
+  <rect x="244" y="370" width="400" height="16" rx="8" fill="#EBF2F9" fill-opacity="0.28"/>
+  <rect x="244" y="402" width="322" height="16" rx="8" fill="#EBF2F9" fill-opacity="0.28"/>
+  <rect x="206" y="503" width="668" height="150" rx="28" fill="#FFF8EE"/>
+  <rect x="252" y="555" width="238" height="16" rx="8" fill="#16385B" fill-opacity="0.82"/>
+  <rect x="252" y="590" width="360" height="12" rx="6" fill="#16385B" fill-opacity="0.24"/>
+  <rect x="252" y="615" width="302" height="12" rx="6" fill="#16385B" fill-opacity="0.24"/>
+  <rect x="206" y="700" width="312" height="180" rx="28" fill="#173153"/>
+  <rect x="562" y="700" width="312" height="180" rx="28" fill="#FFE0BF"/>
+  <text x="244" y="333" fill="#112338" font-size="24" font-weight="700" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">FIRST DM</text>
+  <text x="208" y="770" fill="#F5F0E7" font-size="64" font-weight="700" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">初回DM</text>
+  <text x="208" y="829" fill="#C8D8EA" font-size="34" font-weight="500" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">第一印象で興味を作る</text>
+</svg>

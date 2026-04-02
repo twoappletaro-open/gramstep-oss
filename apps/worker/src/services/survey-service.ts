@@ -1,5 +1,6 @@
 import { generateId } from "@gramstep/db";
 import type { Form, FormAnswer, FormSession, FormStep, IgUser } from "@gramstep/db";
+import type { MessagePayload } from "@gramstep/ig-sdk";
 import type {
   AppError,
   CreateSurveyInput,
@@ -23,6 +24,12 @@ const DEFAULT_ATTRIBUTE_OPTIONS = [
 type SurveyListRow = Form & {
   response_user_count?: number;
   steps_count?: number;
+};
+
+type SurveyDefinitionCacheEntry = {
+  form: Form;
+  steps: FormStep[];
+  expiresAt: number;
 };
 
 export interface SurveyStepView {
@@ -70,10 +77,70 @@ export interface SurveyStartResult {
   first_step_order: number;
 }
 
+export interface SurveyResponseAnswer {
+  step_order: number;
+  question_text: string;
+  answer_value: string;
+  answer_label: string | null;
+  answered_at: number;
+}
+
+export interface SurveyResponseItem {
+  session_id: string;
+  ig_user_id: string;
+  ig_username: string | null;
+  display_name: string | null;
+  started_at: number;
+  completed_at: number | null;
+  answers: SurveyResponseAnswer[];
+}
+
 export interface SurveyIncomingResult {
   handled: boolean;
   completed: boolean;
   session_id?: string;
+}
+
+export interface SurveyReportSummary {
+  total_sessions: number;
+  completed_sessions: number;
+  completion_rate: number;
+  unique_users: number;
+  latest_response_at: number | null;
+}
+
+export interface SurveyReportChoiceOption {
+  label: string;
+  value: string;
+  response_count: number;
+}
+
+export interface SurveyReportSampleAnswer {
+  answer_value: string;
+  answer_label: string | null;
+  answered_at: number;
+  ig_username: string | null;
+  display_name: string | null;
+}
+
+export interface SurveyReportQuestion {
+  step_id: string;
+  step_order: number;
+  question_text: string;
+  field_type: "default_attribute" | "custom_attribute" | "free_input";
+  field_key: string | null;
+  answer_mode: "free_text" | "choice";
+  response_count: number;
+  latest_answered_at: number | null;
+  choice_breakdown: SurveyReportChoiceOption[];
+  sample_answers: SurveyReportSampleAnswer[];
+}
+
+export interface SurveyReport {
+  survey: SurveyDetail;
+  summary: SurveyReportSummary;
+  questions: SurveyReportQuestion[];
+  recent_responses: SurveyResponseItem[];
 }
 
 export interface SurveyService {
@@ -84,6 +151,8 @@ export interface SurveyService {
   deleteSurvey(id: string, accountId: string): Promise<Result<void, AppError>>;
   archiveSurveys(accountId: string, ids: string[]): Promise<Result<{ archived: number }, AppError>>;
   exportSurveyCsv(id: string, accountId: string): Promise<Result<string, AppError>>;
+  listResponses(id: string, accountId: string, limit?: number, offset?: number): Promise<Result<SurveyResponseItem[], AppError>>;
+  getReport(id: string, accountId: string): Promise<Result<SurveyReport, AppError>>;
   listFieldOptions(accountId: string): Promise<Result<SurveyFieldOption[], AppError>>;
   startSurveyForUser(
     surveyId: string,
@@ -103,7 +172,18 @@ export interface SurveyService {
 export interface SurveyServiceDeps {
   db: D1Database;
   sendQueue: Queue<SendQueueMessage>;
+  sendImmediate?: (input: {
+    messageId: string;
+    accountId: string;
+    igUserId: string;
+    recipientId: string;
+    sourceId: string;
+    message: MessagePayload;
+  }) => Promise<Result<void, AppError>>;
 }
+
+const SURVEY_DEFINITION_CACHE_TTL_MS = 30_000;
+const surveyDefinitionCache = new Map<string, SurveyDefinitionCacheEntry>();
 
 function parseOptions(raw: string | null | undefined): SurveyOption[] {
   if (!raw) return [];
@@ -168,23 +248,54 @@ function sanitizeCsv(value: string): string {
 }
 
 export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
-  const { db, sendQueue } = deps;
+  const { db, sendQueue, sendImmediate } = deps;
   const customVariableService = createCustomVariableService({ db });
   const templateEngine = createTemplateEngine({ db, customVariableService });
 
-  async function getSurveyRow(id: string, accountId: string): Promise<Form | null> {
-    return db
-      .prepare("SELECT * FROM forms WHERE id = ? AND account_id = ?")
-      .bind(id, accountId)
-      .first<Form>();
+  function surveyCacheKey(accountId: string, surveyId: string): string {
+    return `${accountId}:${surveyId}`;
   }
 
-  async function getSurveySteps(formId: string): Promise<FormStep[]> {
-    const result = await db
+  function invalidateSurveyDefinitionCache(accountId: string, surveyId: string): void {
+    surveyDefinitionCache.delete(surveyCacheKey(accountId, surveyId));
+  }
+
+  async function loadSurveyDefinition(
+    surveyId: string,
+    accountId: string,
+  ): Promise<{ form: Form; steps: FormStep[] } | null> {
+    const cacheKey = surveyCacheKey(accountId, surveyId);
+    const cached = surveyDefinitionCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { form: cached.form, steps: cached.steps };
+    }
+
+    const form = await db
+      .prepare("SELECT * FROM forms WHERE id = ? AND account_id = ?")
+      .bind(surveyId, accountId)
+      .first<Form>();
+    if (!form) {
+      surveyDefinitionCache.delete(cacheKey);
+      return null;
+    }
+
+    const stepsResult = await db
       .prepare("SELECT * FROM form_steps WHERE form_id = ? ORDER BY step_order ASC")
-      .bind(formId)
+      .bind(surveyId)
       .all<FormStep>();
-    return result.results ?? [];
+    const steps = stepsResult.results ?? [];
+
+    surveyDefinitionCache.set(cacheKey, {
+      form,
+      steps,
+      expiresAt: Date.now() + SURVEY_DEFINITION_CACHE_TTL_MS,
+    });
+
+    return { form, steps };
+  }
+
+  async function getSurveyRow(id: string, accountId: string): Promise<Form | null> {
+    return (await loadSurveyDefinition(id, accountId))?.form ?? null;
   }
 
   async function getResponseUserCount(formId: string): Promise<number> {
@@ -261,6 +372,37 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
     };
   }
 
+  function normalizeImmediatePayload(payload: Record<string, unknown>): MessagePayload {
+    if (payload.type === "quick_reply" || Array.isArray(payload.quick_replies) || Array.isArray(payload.quickReplies)) {
+      const replies = (payload.quickReplies ?? payload.quick_replies ?? []) as Array<Record<string, unknown>>;
+      return {
+        type: "quick_reply",
+        text: typeof payload.text === "string" ? payload.text : "",
+        quickReplies: replies.map((reply) => ({
+          contentType: "text",
+          title: String(reply.title ?? ""),
+          payload: String(reply.payload ?? ""),
+        })),
+      };
+    }
+
+    if (payload.type === "image" || typeof payload.url === "string") {
+      return {
+        type: "image",
+        url: String(payload.url ?? ""),
+      };
+    }
+
+    if (payload.type === "generic" || Array.isArray(payload.elements)) {
+      return payload as unknown as MessagePayload;
+    }
+
+    return {
+      type: "text",
+      text: typeof payload.text === "string" ? payload.text : "",
+    };
+  }
+
   async function queueOutboundMessage(
     accountId: string,
     igUserId: string,
@@ -278,6 +420,20 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
       )
       .bind(messageId, accountId, igUserId, messageType, content, formId)
       .run();
+
+    if (sendImmediate) {
+      const immediateResult = await sendImmediate({
+        messageId,
+        accountId,
+        igUserId,
+        recipientId,
+        sourceId: formId,
+        message: normalizeImmediatePayload(payload),
+      });
+      if (immediateResult.ok) {
+        return;
+      }
+    }
 
     const msg: SendQueueMessage = {
       id: messageId,
@@ -347,6 +503,95 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
     }
   }
 
+  async function loadResponses(
+    id: string,
+    accountId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<Result<SurveyResponseItem[], AppError>> {
+    const form = await getSurveyRow(id, accountId);
+    if (!form) {
+      return err(createAppError("NOT_FOUND", "Survey not found"));
+    }
+
+    const cappedLimit = Math.max(1, Math.min(limit, 100));
+    const safeOffset = Math.max(0, offset);
+    const sessionsResult = await db
+      .prepare(
+        `SELECT
+           s.id AS session_id,
+           s.ig_user_id,
+           u.ig_username,
+           u.display_name,
+           s.started_at,
+           s.completed_at
+         FROM form_sessions s
+         JOIN ig_users u ON u.id = s.ig_user_id
+         WHERE s.form_id = ? AND s.account_id = ?
+         ORDER BY s.started_at DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .bind(id, accountId, cappedLimit, safeOffset)
+      .all<{
+        session_id: string;
+        ig_user_id: string;
+        ig_username: string | null;
+        display_name: string | null;
+        started_at: number;
+        completed_at: number | null;
+      }>();
+
+    const sessions = sessionsResult.results ?? [];
+    if (sessions.length === 0) {
+      return ok([]);
+    }
+
+    const placeholders = sessions.map(() => "?").join(", ");
+    const answersResult = await db
+      .prepare(
+        `SELECT
+           fa.session_id,
+           fa.step_order,
+           fa.answer_value,
+           fa.answer_label,
+           fa.answered_at,
+           fs.question_text
+         FROM form_answers fa
+         JOIN form_steps fs ON fs.id = fa.step_id
+         WHERE fa.form_id = ? AND fa.account_id = ? AND fa.session_id IN (${placeholders})
+         ORDER BY fa.answered_at ASC`,
+      )
+      .bind(id, accountId, ...sessions.map((session) => session.session_id))
+      .all<{
+        session_id: string;
+        step_order: number;
+        answer_value: string;
+        answer_label: string | null;
+        answered_at: number;
+        question_text: string;
+      }>();
+
+    const answersBySession = new Map<string, SurveyResponseAnswer[]>();
+    for (const answer of answersResult.results ?? []) {
+      const current = answersBySession.get(answer.session_id) ?? [];
+      current.push({
+        step_order: answer.step_order,
+        question_text: answer.question_text,
+        answer_value: answer.answer_value,
+        answer_label: answer.answer_label,
+        answered_at: answer.answered_at,
+      });
+      answersBySession.set(answer.session_id, current);
+    }
+
+    return ok(
+      sessions.map((session) => ({
+        ...session,
+        answers: answersBySession.get(session.session_id) ?? [],
+      })),
+    );
+  }
+
   return {
     async listSurveys(accountId, includeArchived = false) {
       const query = `
@@ -377,11 +622,11 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
     },
 
     async getSurvey(id, accountId) {
-      const form = await getSurveyRow(id, accountId);
-      if (!form) {
+      const definition = await loadSurveyDefinition(id, accountId);
+      if (!definition) {
         return err(createAppError("NOT_FOUND", "Survey not found"));
       }
-      const steps = await getSurveySteps(id);
+      const { form, steps } = definition;
       const responseUserCount = await getResponseUserCount(id);
       return ok(mapSurveyDetail(form, steps, responseUserCount));
     },
@@ -410,6 +655,7 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
         await insertStep(formId, step, now);
       }
 
+      invalidateSurveyDefinitionCache(accountId, formId);
       return getSurveyResult(formId, accountId);
     },
 
@@ -450,6 +696,7 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
         }
       }
 
+      invalidateSurveyDefinitionCache(accountId, id);
       return getSurveyResult(id, accountId);
     },
 
@@ -459,6 +706,7 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
         return err(createAppError("NOT_FOUND", "Survey not found"));
       }
       await db.prepare("DELETE FROM forms WHERE id = ? AND account_id = ?").bind(id, accountId).run();
+      invalidateSurveyDefinitionCache(accountId, id);
       return ok(undefined);
     },
 
@@ -472,16 +720,19 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
         .prepare(`UPDATE forms SET archived_at = ?, updated_at = ? WHERE account_id = ? AND id IN (${placeholders})`)
         .bind(now, now, accountId, ...ids)
         .run();
+      for (const id of ids) {
+        invalidateSurveyDefinitionCache(accountId, id);
+      }
       return ok({ archived: result.meta.changes ?? 0 });
     },
 
     async exportSurveyCsv(id, accountId) {
-      const form = await getSurveyRow(id, accountId);
-      if (!form) {
+      const definition = await loadSurveyDefinition(id, accountId);
+      if (!definition) {
         return err(createAppError("NOT_FOUND", "Survey not found"));
       }
 
-      const steps = await getSurveySteps(id);
+      const { steps } = definition;
       const answersResult = await db
         .prepare(
           `SELECT
@@ -556,6 +807,188 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
       return ok(lines.join("\n") + "\n");
     },
 
+    async listResponses(id, accountId, limit = 50, offset = 0) {
+      return loadResponses(id, accountId, limit, offset);
+    },
+
+    async getReport(id, accountId) {
+      const definition = await loadSurveyDefinition(id, accountId);
+      if (!definition) {
+        return err(createAppError("NOT_FOUND", "Survey not found"));
+      }
+
+      const { form, steps } = definition;
+      const responseUserCount = await getResponseUserCount(id);
+
+      const sessionSummary = await db
+        .prepare(
+          `SELECT
+             COUNT(*) AS total_sessions,
+             SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_sessions,
+             COUNT(DISTINCT ig_user_id) AS unique_users
+           FROM form_sessions
+           WHERE form_id = ? AND account_id = ?`,
+        )
+        .bind(id, accountId)
+        .first<{
+          total_sessions: number;
+          completed_sessions: number;
+          unique_users: number;
+        }>();
+
+      const latestResponse = await db
+        .prepare(
+          `SELECT
+             MAX(answered_at) AS latest_response_at
+           FROM form_answers
+           WHERE form_id = ? AND account_id = ?`,
+        )
+        .bind(id, accountId)
+        .first<{ latest_response_at: number | null }>();
+
+      const answerSummary = await db
+        .prepare(
+          `SELECT
+             step_id,
+             COUNT(*) AS response_count,
+             MAX(answered_at) AS latest_answered_at
+           FROM form_answers fa
+           WHERE fa.form_id = ? AND fa.account_id = ?
+           GROUP BY step_id`,
+        )
+        .bind(id, accountId)
+        .all<{
+          step_id: string;
+          response_count: number;
+          latest_answered_at: number | null;
+        }>();
+
+      const choiceSummary = await db
+        .prepare(
+          `SELECT
+             step_id,
+             answer_value,
+             answer_label,
+             COUNT(*) AS response_count
+           FROM form_answers
+           WHERE form_id = ? AND account_id = ?
+           GROUP BY step_id, answer_value, answer_label`,
+        )
+        .bind(id, accountId)
+        .all<{
+          step_id: string;
+          answer_value: string;
+          answer_label: string | null;
+          response_count: number;
+        }>();
+
+      const freeTextSamples = await db
+        .prepare(
+          `SELECT
+             fa.step_id,
+             fa.answer_value,
+             fa.answer_label,
+             fa.answered_at,
+             u.ig_username,
+             u.display_name
+           FROM form_answers fa
+           JOIN form_steps fs ON fs.id = fa.step_id
+           JOIN ig_users u ON u.id = fa.ig_user_id
+           WHERE fa.form_id = ? AND fa.account_id = ? AND fs.answer_mode = 'free_text'
+           ORDER BY fa.answered_at DESC`,
+        )
+        .bind(id, accountId)
+        .all<{
+          step_id: string;
+          answer_value: string;
+          answer_label: string | null;
+          answered_at: number;
+          ig_username: string | null;
+          display_name: string | null;
+        }>();
+
+      const answerSummaryByStep = new Map(
+        (answerSummary.results ?? []).map((row) => [row.step_id, row] as const),
+      );
+
+      const choiceSummaryByStep = new Map<string, Array<{
+        step_id: string;
+        answer_value: string;
+        answer_label: string | null;
+        response_count: number;
+      }>>();
+      for (const row of choiceSummary.results ?? []) {
+        const current = choiceSummaryByStep.get(row.step_id) ?? [];
+        current.push(row);
+        choiceSummaryByStep.set(row.step_id, current);
+      }
+
+      const freeTextSamplesByStep = new Map<string, SurveyReportSampleAnswer[]>();
+      for (const row of freeTextSamples.results ?? []) {
+        const current = freeTextSamplesByStep.get(row.step_id) ?? [];
+        if (current.length < 5) {
+          current.push({
+            answer_value: row.answer_value,
+            answer_label: row.answer_label,
+            answered_at: row.answered_at,
+            ig_username: row.ig_username,
+            display_name: row.display_name,
+          });
+        }
+        freeTextSamplesByStep.set(row.step_id, current);
+      }
+
+      const recentResponses = await loadResponses(id, accountId, 20);
+      if (!recentResponses.ok) {
+        return recentResponses;
+      }
+
+      const survey = mapSurveyDetail(form, steps, responseUserCount);
+      const totalSessions = sessionSummary?.total_sessions ?? 0;
+      const completedSessions = sessionSummary?.completed_sessions ?? 0;
+
+      return ok({
+        survey,
+        summary: {
+          total_sessions: totalSessions,
+          completed_sessions: completedSessions,
+          completion_rate: totalSessions > 0 ? completedSessions / totalSessions : 0,
+          unique_users: sessionSummary?.unique_users ?? 0,
+          latest_response_at: latestResponse?.latest_response_at ?? null,
+        },
+        questions: steps.map((step) => {
+          const summary = answerSummaryByStep.get(step.id);
+          const view = toStepView(step);
+          const choiceRows = choiceSummaryByStep.get(step.id) ?? [];
+
+          return {
+            step_id: step.id,
+            step_order: step.step_order,
+            question_text: step.question_text,
+            field_type: view.field_type,
+            field_key: view.field_key,
+            answer_mode: view.answer_mode,
+            response_count: summary?.response_count ?? 0,
+            latest_answered_at: summary?.latest_answered_at ?? null,
+            choice_breakdown: view.answer_mode === "choice"
+              ? view.options.map((option) => {
+                const matched = choiceRows.find((row) => row.answer_value === option.value || row.answer_label === option.label);
+                return {
+                  label: option.label,
+                  value: option.value,
+                  response_count: matched?.response_count ?? 0,
+                };
+              })
+              : [],
+            sample_answers: view.answer_mode === "free_text"
+              ? (freeTextSamplesByStep.get(step.id) ?? [])
+              : [],
+          };
+        }),
+        recent_responses: recentResponses.value,
+      });
+    },
+
     async listFieldOptions(accountId) {
       const variables = await customVariableService.listVariables(accountId);
       if (!variables.ok) return err(variables.error);
@@ -579,15 +1012,14 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
     },
 
     async startSurveyForUser(surveyId, accountId, igUserId, recipientId) {
-      const form = await getSurveyRow(surveyId, accountId);
-      if (!form || form.archived_at !== null) {
+      const definition = await loadSurveyDefinition(surveyId, accountId);
+      if (!definition || definition.form.archived_at !== null) {
         return err(createAppError("NOT_FOUND", "Survey not found"));
       }
+      const { form, steps } = definition;
       if (form.is_active !== 1) {
         return err(createAppError("VALIDATION_ERROR", "Survey is inactive"));
       }
-
-      const steps = await getSurveySteps(surveyId);
       const firstStep = steps[0];
       if (!firstStep) {
         return err(createAppError("VALIDATION_ERROR", "Survey has no steps"));
@@ -632,10 +1064,12 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
         return ok({ handled: false, completed: false });
       }
 
-      const step = await db
-        .prepare("SELECT * FROM form_steps WHERE form_id = ? AND step_order = ?")
-        .bind(session.form_id, session.current_step_order)
-        .first<FormStep>();
+      const definition = await loadSurveyDefinition(session.form_id, input.accountId);
+      if (!definition) {
+        return err(createAppError("NOT_FOUND", "Survey not found"));
+      }
+
+      const step = definition.steps.find((candidate) => candidate.step_order === session.current_step_order);
       if (!step) {
         return err(createAppError("NOT_FOUND", "Survey step not found"));
       }
@@ -692,7 +1126,10 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
         return ok({ handled: true, completed: false, session_id: session.id });
       }
 
-      if (step.field_key) {
+      const persistMetadata = async () => {
+        if (!step.field_key) {
+          return;
+        }
         const user = await db
           .prepare("SELECT metadata FROM ig_users WHERE id = ?")
           .bind(input.igUserId)
@@ -708,14 +1145,14 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
           .prepare("UPDATE ig_users SET metadata = ?, updated_at = ? WHERE id = ?")
           .bind(JSON.stringify(metadata), now, input.igUserId)
           .run();
+      };
+
+      let metadataPersisted = false;
+      if (step.field_key) {
+        metadataPersisted = false;
       }
 
-      const nextStep = await db
-        .prepare(
-          "SELECT * FROM form_steps WHERE form_id = ? AND step_order > ? ORDER BY step_order ASC LIMIT 1",
-        )
-        .bind(session.form_id, session.current_step_order)
-        .first<FormStep>();
+      const nextStep = definition.steps.find((candidate) => candidate.step_order > session.current_step_order) ?? null;
 
       if (nextStep) {
         await db
@@ -729,6 +1166,8 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
           session.form_id,
           buildQuestionPayload(nextStep),
         );
+        await persistMetadata();
+        metadataPersisted = true;
         return ok({ handled: true, completed: false, session_id: session.id });
       }
 
@@ -737,13 +1176,9 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
         .bind(now, now, session.id)
         .run();
 
-      const form = await db
-        .prepare("SELECT * FROM forms WHERE id = ? AND account_id = ?")
-        .bind(session.form_id, input.accountId)
-        .first<Form>();
-      if (form?.completion_template_id) {
+      if (definition.form.completion_template_id) {
         const completionPayload = await renderCompletionPayload(
-          form.completion_template_id,
+          definition.form.completion_template_id,
           input.accountId,
           input.igUserId,
         );
@@ -758,16 +1193,20 @@ export function createSurveyService(deps: SurveyServiceDeps): SurveyService {
         }
       }
 
+      if (!metadataPersisted) {
+        await persistMetadata();
+      }
+
       return ok({ handled: true, completed: true, session_id: session.id });
     },
   };
 
-  async function getSurveyResult(id: string, accountId: string): Promise<Result<SurveyDetail, AppError>> {
-    const form = await getSurveyRow(id, accountId);
-    if (!form) {
+async function getSurveyResult(id: string, accountId: string): Promise<Result<SurveyDetail, AppError>> {
+    const definition = await loadSurveyDefinition(id, accountId);
+    if (!definition) {
       return err(createAppError("NOT_FOUND", "Survey not found"));
     }
-    const steps = await getSurveySteps(id);
+    const { form, steps } = definition;
     const responseUserCount = await getResponseUserCount(id);
     return ok(mapSurveyDetail(form, steps, responseUserCount));
   }

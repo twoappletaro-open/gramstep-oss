@@ -3,21 +3,21 @@ import { join } from "node:path";
 import { execSync } from "node:child_process";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { wrangler, wranglerWithStdin, WranglerError } from "../lib/wrangler.js";
+import { wranglerWithStdin } from "../lib/wrangler.js";
 import type { SetupState } from "../lib/state.js";
 
-/** Build and deploy Admin UI (Next.js) to Cloudflare Pages */
+/** Build and deploy Admin UI (Next.js + OpenNext) to Cloudflare Workers */
 export async function deployAdmin(state: SetupState, projectDir: string): Promise<void> {
   p.log.step(pc.bold("管理画面 (Admin UI) デプロイ"));
 
   const webDir = join(projectDir, "apps", "web");
-  const pagesProject = `${state.workerName}-admin`;
+  const adminWorkerName = `${state.workerName}-admin`;
 
   // Write .env.production with Worker URL
   const envPath = join(webDir, ".env.production");
   writeFileSync(envPath, `NEXT_PUBLIC_API_URL=${state.workerUrl}\n`, "utf-8");
 
-  // Build
+  // Build Next.js
   const spinner = p.spinner();
   spinner.start("Next.jsをビルド中...");
   try {
@@ -31,38 +31,28 @@ export async function deployAdmin(state: SetupState, projectDir: string): Promis
         NEXT_PUBLIC_API_URL: state.workerUrl,
       },
     });
-    spinner.stop("ビルド完了");
+    spinner.stop("Next.jsビルド完了");
   } catch (e: unknown) {
-    spinner.stop("ビルド失敗");
+    spinner.stop("Next.jsビルド失敗");
     if (existsSync(envPath)) unlinkSync(envPath);
     const msg = e instanceof Error ? e.message : "";
     throw new Error(`Next.jsビルド失敗: ${msg.slice(0, 300)}`);
   }
 
-  // Deploy to Cloudflare Pages
+  // Build & Deploy with OpenNext for Cloudflare
   const spinner2 = p.spinner();
-  spinner2.start("Cloudflare Pagesにデプロイ中...");
+  spinner2.start("OpenNext ビルド & Cloudflare Workers にデプロイ中...");
   try {
-    // Create Pages project (idempotent)
-    try {
-      wrangler(["pages", "project", "create", pagesProject, "--production-branch", "main"], projectDir);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "";
-      const stderr = e instanceof WranglerError ? e.stderr : "";
-      if (!msg.includes("already exists") && !stderr.includes("already exists") &&
-          !msg.includes("already taken") && !stderr.includes("already taken")) {
-        throw e;
-      }
-    }
+    const output = execSync(`npx opennextjs-cloudflare build && npx opennextjs-cloudflare deploy`, {
+      cwd: webDir,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 300_000,
+    });
 
-    // Deploy
-    const outDir = join(webDir, ".next", "standalone");
-    const deployDir = existsSync(outDir) ? outDir : join(webDir, "out");
-    const output = wrangler(["pages", "deploy", deployDir, "--project-name", pagesProject], projectDir);
-
-    // Extract URL
-    const urlMatch = output.match(/(https:\/\/[^\s]+\.pages\.dev)/);
-    state.adminUrl = urlMatch?.[1] ?? `https://${pagesProject}.pages.dev`;
+    // Extract URL from deploy output
+    const urlMatch = output.match(/(https:\/\/[^\s]+\.workers\.dev)/);
+    state.adminUrl = urlMatch?.[1] ?? `https://${adminWorkerName}.workers.dev`;
     state.dashboardUrl = state.adminUrl;
 
     spinner2.stop(`管理画面デプロイ完了: ${pc.cyan(state.adminUrl)}`);
@@ -79,12 +69,12 @@ export async function deployAdmin(state: SetupState, projectDir: string): Promis
     }
   } catch (e: unknown) {
     spinner2.stop("管理画面デプロイ失敗");
-    const stderr = e instanceof WranglerError ? e.stderr : "";
-    if (stderr.includes("pages") || stderr.includes("Pages")) {
-      p.log.error("Cloudflare Pagesでエラーが発生しました。");
-      p.log.info("手動デプロイ: cd apps/web && pnpm build && npx wrangler pages deploy .next/standalone");
-    }
-    throw e;
+    const msg = e instanceof Error ? e.message : "";
+    const stderr = (e as { stderr?: string }).stderr ?? "";
+    p.log.error("OpenNext/Cloudflareデプロイでエラーが発生しました。");
+    p.log.info(`手動デプロイ: cd apps/web && pnpm build && npx opennextjs-cloudflare deploy`);
+    if (stderr) p.log.info(pc.dim(stderr.slice(0, 300)));
+    throw new Error(`管理画面デプロイ失敗: ${msg.slice(0, 300)}`);
   } finally {
     if (existsSync(envPath)) unlinkSync(envPath);
   }

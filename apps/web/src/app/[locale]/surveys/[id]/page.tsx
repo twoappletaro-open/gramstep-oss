@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createApiClient, getApiUrl } from "../../../../lib/api-client";
 import { SurveyForm } from "../../../../components/surveys/survey-form";
 import type { CreateSurveyInput, UpdateSurveyInput } from "@gramstep/shared";
+import { Button } from "../../../../components/ui/button";
 
 type SurveyDetail = {
   id: string;
@@ -26,6 +28,7 @@ export default function EditSurveyPage() {
   const id = params.id as string;
   const locale = params.locale ?? "ja";
   const apiUrl = typeof window !== "undefined" ? getApiUrl() : "";
+  const accountId = typeof window !== "undefined" ? localStorage.getItem("gramstep_account_id") ?? "" : "";
 
   const [survey, setSurvey] = useState<SurveyDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -35,11 +38,12 @@ export default function EditSurveyPage() {
   useEffect(() => {
     async function load() {
       const client = createApiClient(apiUrl);
-      const result = await client.surveys.get(id);
-      if (result.ok) {
-        setSurvey(result.value as SurveyDetail);
+      const surveyResult = await client.surveys.get(id);
+
+      if (surveyResult.ok) {
+        setSurvey(surveyResult.value as SurveyDetail);
       } else {
-        setError(result.error.message);
+        setError(surveyResult.error.message);
       }
       setLoading(false);
     }
@@ -59,6 +63,23 @@ export default function EditSurveyPage() {
     setSaving(false);
   }
 
+  async function handleExport() {
+    const client = createApiClient(apiUrl);
+    const result = await client.surveys.exportCsv(accountId, id);
+    if (!result.ok) {
+      setError(result.error.message);
+      return;
+    }
+
+    const blob = new Blob([result.value], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${survey?.name ?? id}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (loading) {
     return <main className="mx-auto max-w-5xl p-6 text-gray-500">読み込み中...</main>;
   }
@@ -69,7 +90,17 @@ export default function EditSurveyPage() {
 
   return (
     <main className="mx-auto max-w-5xl p-6">
-      <h1 className="mb-6 text-2xl font-bold text-cobalt-700">アンケートを編集</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold text-cobalt-700">アンケートを編集</h1>
+        <div className="flex items-center gap-2">
+          <Link href={`/${locale}/surveys/${id}/report`}>
+            <Button type="button" variant="outline">レポートを見る</Button>
+          </Link>
+          <Button type="button" variant="outline" onClick={handleExport}>
+            回答CSVをダウンロード
+          </Button>
+        </div>
+      </div>
       {error && <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</div>}
       <SurveyForm
         initialData={survey}

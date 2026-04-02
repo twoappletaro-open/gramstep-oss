@@ -6,6 +6,10 @@ import {
   handleCallback,
 } from "../../services/auth-service.js";
 import type { AuthServiceDeps } from "../../services/auth-service.js";
+import {
+  getResolvedAppContext,
+  syncWebhookSubscriptionForSlot,
+} from "../../services/app-failover.js";
 
 const authRoutes = new Hono<{ Bindings: Env }>();
 
@@ -61,19 +65,18 @@ authRoutes.get("/callback", async (c) => {
 
 // APIテスト呼び出し（App Review用）
 authRoutes.get("/api-test", async (c) => {
-  const { getDecryptedToken } = await import("../../services/auth-service.js");
-  const { generateAppSecretProof } = await import("../../services/crypto.js");
-
   const accountId = c.req.query("account_id");
   if (!accountId) return c.json({ error: "account_id required" }, 400);
 
-  const tokenResult = await getDecryptedToken(accountId, {
-    db: c.env.DB, kv: c.env.KV, encryptionKey: c.env.ENCRYPTION_KEY,
-  });
-  if (!tokenResult.ok) return c.json({ error: "Token not found" }, 404);
+  let appContext;
+  try {
+    appContext = await getResolvedAppContext(c.env, accountId);
+  } catch {
+    return c.json({ error: "Token not found" }, 404);
+  }
 
-  const token = tokenResult.value;
-  const proof = await generateAppSecretProof(token, c.env.META_APP_SECRET);
+  const token = appContext.accessToken;
+  const proof = appContext.appSecretProof;
   const v = c.env.META_API_VERSION;
 
   const account = await c.env.DB.prepare("SELECT ig_user_id FROM accounts WHERE id = ?")
@@ -107,18 +110,15 @@ authRoutes.get("/api-test", async (c) => {
 
 // Webhook購読状態確認 & 再購読
 authRoutes.get("/webhook-status", async (c) => {
-  const { getDecryptedToken } = await import("../../services/auth-service.js");
-  const { generateAppSecretProof } = await import("../../services/crypto.js");
-
   const accountId = c.req.query("account_id");
   if (!accountId) return c.json({ error: "account_id required" }, 400);
 
-  const tokenResult = await getDecryptedToken(accountId, {
-    db: c.env.DB, kv: c.env.KV, encryptionKey: c.env.ENCRYPTION_KEY,
-  });
-  if (!tokenResult.ok) return c.json({ error: "Token not found" }, 404);
-
-  const proof = await generateAppSecretProof(tokenResult.value, c.env.META_APP_SECRET);
+  let appContext;
+  try {
+    appContext = await getResolvedAppContext(c.env, accountId);
+  } catch {
+    return c.json({ error: "Token not found" }, 404);
+  }
 
   // 現在の購読を取得
   const account = await c.env.DB.prepare("SELECT ig_user_id FROM accounts WHERE id = ?")
@@ -126,47 +126,36 @@ authRoutes.get("/webhook-status", async (c) => {
   if (!account) return c.json({ error: "Account not found" }, 404);
 
   const res = await fetch(
-    `https://graph.instagram.com/${c.env.META_API_VERSION}/${account.ig_user_id}/subscribed_apps?access_token=${tokenResult.value}&appsecret_proof=${proof}`,
+    `https://graph.instagram.com/${c.env.META_API_VERSION}/${account.ig_user_id}/subscribed_apps?access_token=${appContext.accessToken}&appsecret_proof=${appContext.appSecretProof}`,
   );
   const data = await res.json();
 
-  return c.json({ subscriptions: data, ig_user_id: account.ig_user_id });
+  return c.json({ subscriptions: data, ig_user_id: account.ig_user_id, slot: appContext.slot });
 });
 
 // 手動Webhook再購読
 authRoutes.post("/resubscribe", async (c) => {
-  const { getDecryptedToken } = await import("../../services/auth-service.js");
-  const { generateAppSecretProof } = await import("../../services/crypto.js");
-
   const body = await c.req.json() as { account_id?: string };
   const accountId = body.account_id;
   if (!accountId) return c.json({ error: "account_id required" }, 400);
-
-  const tokenResult = await getDecryptedToken(accountId, {
-    db: c.env.DB, kv: c.env.KV, encryptionKey: c.env.ENCRYPTION_KEY,
-  });
-  if (!tokenResult.ok) return c.json({ error: "Token not found" }, 404);
-
-  const proof = await generateAppSecretProof(tokenResult.value, c.env.META_APP_SECRET);
 
   const account = await c.env.DB.prepare("SELECT ig_user_id FROM accounts WHERE id = ?")
     .bind(accountId).first<{ ig_user_id: string }>();
   if (!account) return c.json({ error: "Account not found" }, 404);
 
-  const res = await fetch(
-    `https://graph.instagram.com/${c.env.META_API_VERSION}/${account.ig_user_id}/subscribed_apps`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        subscribed_fields: "messages,messaging_postbacks,messaging_referral,messaging_seen,message_reactions",
-        access_token: tokenResult.value,
-        appsecret_proof: proof,
-      }),
-    },
-  );
-  const data = await res.json();
+  let appContext;
+  try {
+    appContext = await getResolvedAppContext(c.env, accountId);
+  } catch {
+    return c.json({ error: "Token not found" }, 404);
+  }
 
-  return c.json({ result: data, ig_user_id: account.ig_user_id });
+  const result = await syncWebhookSubscriptionForSlot(c.env, accountId, appContext.slot, "POST");
+  if (!result.ok) {
+    return c.json({ error: result.error ?? "Failed to resubscribe" }, 400);
+  }
+
+  return c.json({ result, ig_user_id: account.ig_user_id, slot: appContext.slot });
 });
 
 export { authRoutes };

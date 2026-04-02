@@ -1,0 +1,55 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="110" y1="92" x2="1098" y2="1094" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF6DA"/>
+      <stop offset="0.48" stop-color="#FFE4C9"/>
+      <stop offset="1" stop-color="#FFD2C8"/>
+    </linearGradient>
+    <linearGradient id="card" x1="180" y1="192" x2="1020" y2="930" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#132238"/>
+      <stop offset="1" stop-color="#213D5F"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FF8A5B"/>
+      <stop offset="1" stop-color="#FFCC70"/>
+    </linearGradient>
+    <filter id="shadow" x="120" y="142" width="960" height="764" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="24"/>
+      <feGaussianBlur stdDeviation="30"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.117647 0 0 0 0 0.172549 0 0 0 0 0.262745 0 0 0 0.18 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="1200" rx="48" fill="url(#bg)"/>
+  <circle cx="1030" cy="182" r="92" fill="#FFF1D8" fill-opacity="0.88"/>
+  <circle cx="198" cy="1010" r="128" fill="#FFF4E8" fill-opacity="0.72"/>
+  <circle cx="1048" cy="980" r="70" fill="#FFD8B8" fill-opacity="0.52"/>
+  <g filter="url(#shadow)">
+    <rect x="180" y="178" width="840" height="640" rx="40" fill="url(#card)"/>
+  </g>
+  <rect x="238" y="240" width="148" height="50" rx="25" fill="#F8F5EF" fill-opacity="0.14"/>
+  <rect x="238" y="322" width="420" height="96" rx="24" fill="#F8F5EF" fill-opacity="0.08"/>
+  <rect x="238" y="510" width="286" height="18" rx="9" fill="#F8F5EF" fill-opacity="0.22"/>
+  <rect x="238" y="546" width="244" height="18" rx="9" fill="#F8F5EF" fill-opacity="0.22"/>
+  <rect x="238" y="642" width="236" height="70" rx="26" fill="url(#accent)"/>
+  <rect x="738" y="260" width="216" height="408" rx="30" fill="#F7F1E8"/>
+  <rect x="762" y="294" width="168" height="112" rx="24" fill="#FFF7EB"/>
+  <rect x="782" y="328" width="112" height="16" rx="8" fill="#203B5D" fill-opacity="0.88"/>
+  <rect x="782" y="356" width="126" height="12" rx="6" fill="#203B5D" fill-opacity="0.24"/>
+  <rect x="782" y="378" width="102" height="12" rx="6" fill="#203B5D" fill-opacity="0.24"/>
+  <rect x="762" y="438" width="168" height="64" rx="20" fill="#FFE6CF"/>
+  <rect x="782" y="464" width="116" height="12" rx="6" fill="#203B5D" fill-opacity="0.78"/>
+  <rect x="762" y="536" width="76" height="82" rx="18" fill="#203B5D"/>
+  <rect x="854" y="536" width="76" height="82" rx="18" fill="#FFB37D"/>
+  <circle cx="892" cy="214" r="26" fill="#FF8A5B"/>
+  <text x="286" y="273" fill="#FDF8F0" font-size="24" font-weight="700" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">STEP 1</text>
+  <text x="238" y="432" fill="#FDF8F0" font-size="72" font-weight="700" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">gramstep</text>
+  <text x="238" y="502" fill="#FDF8F0" font-size="54" font-weight="700" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">初回DMデモ</text>
+  <text x="238" y="610" fill="#D5E2F2" font-size="34" font-weight="500" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">初回DM → アンケート → 予約導線まで</text>
+  <text x="238" y="654" fill="#D5E2F2" font-size="34" font-weight="500" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">3分で体験できるデモ導線</text>
+  <text x="290" y="686" fill="#132238" font-size="28" font-weight="700" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">START DEMO</text>
+</svg>

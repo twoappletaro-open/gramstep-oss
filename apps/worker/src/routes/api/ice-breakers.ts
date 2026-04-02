@@ -3,42 +3,19 @@ import type { Env } from "../../env.js";
 import { SetIceBreakersInputSchema } from "@gramstep/shared";
 import { createProfileManager } from "../../services/profile-manager.js";
 import { MockInstagramClient } from "@gramstep/ig-sdk";
-import type { Account } from "@gramstep/db";
-import { decryptToken, generateAppSecretProof } from "../../services/crypto.js";
+import { getResolvedAppContext } from "../../services/app-failover.js";
 
 export const iceBreakerRoutes = new Hono<{ Bindings: Env }>();
-
-async function getAccountInfo(
-  db: D1Database,
-  accountId: string,
-  encryptionKey: string,
-  appSecret: string,
-): Promise<{ igUserId: string; accessToken: string; appSecretProof: string } | null> {
-  const account = await db
-    .prepare("SELECT ig_user_id, access_token_encrypted FROM accounts WHERE id = ?")
-    .bind(accountId)
-    .first<Pick<Account, "ig_user_id" | "access_token_encrypted">>();
-  if (!account) return null;
-
-  const decryptResult = await decryptToken(account.access_token_encrypted, encryptionKey);
-  if (!decryptResult.ok) return null;
-
-  const proof = await generateAppSecretProof(decryptResult.value, appSecret);
-
-  return {
-    igUserId: account.ig_user_id,
-    accessToken: decryptResult.value,
-    appSecretProof: proof,
-  };
-}
 
 // NOTE: MockInstagramClient is used as HttpInstagramClient is not yet implemented.
 // When a real client is available, replace MockInstagramClient with it.
 
 iceBreakerRoutes.get("/", async (c) => {
   const accountId = c.get("accountId" as never) as string;
-  const info = await getAccountInfo(c.env.DB, accountId, c.env.ENCRYPTION_KEY, c.env.META_APP_SECRET);
-  if (!info) {
+  let info;
+  try {
+    info = await getResolvedAppContext(c.env, accountId);
+  } catch {
     return c.json({ error: "Account not found or token invalid" }, 404);
   }
 
@@ -46,7 +23,7 @@ iceBreakerRoutes.get("/", async (c) => {
     db: c.env.DB,
     now: () => Math.floor(Date.now() / 1000),
     igClient: new MockInstagramClient(),
-    accessToken: info.appSecretProof,
+    accessToken: info.accessToken,
     igUserId: info.igUserId,
   });
   const result = await manager.listIceBreakers(accountId);
@@ -69,8 +46,10 @@ iceBreakerRoutes.post("/", async (c) => {
     return c.json({ error: "入力が不正です", details: parsed.error.issues }, 400);
   }
 
-  const info = await getAccountInfo(c.env.DB, accountId, c.env.ENCRYPTION_KEY, c.env.META_APP_SECRET);
-  if (!info) {
+  let info;
+  try {
+    info = await getResolvedAppContext(c.env, accountId);
+  } catch {
     return c.json({ error: "Account not found or token invalid" }, 404);
   }
 
@@ -78,7 +57,7 @@ iceBreakerRoutes.post("/", async (c) => {
     db: c.env.DB,
     now: () => Math.floor(Date.now() / 1000),
     igClient: new MockInstagramClient(),
-    accessToken: info.appSecretProof,
+    accessToken: info.accessToken,
     igUserId: info.igUserId,
   });
   const result = await manager.setIceBreakers(accountId, parsed.data);
@@ -91,8 +70,10 @@ iceBreakerRoutes.post("/", async (c) => {
 
 iceBreakerRoutes.delete("/", async (c) => {
   const accountId = c.get("accountId" as never) as string;
-  const info = await getAccountInfo(c.env.DB, accountId, c.env.ENCRYPTION_KEY, c.env.META_APP_SECRET);
-  if (!info) {
+  let info;
+  try {
+    info = await getResolvedAppContext(c.env, accountId);
+  } catch {
     return c.json({ error: "Account not found or token invalid" }, 404);
   }
 
@@ -100,7 +81,7 @@ iceBreakerRoutes.delete("/", async (c) => {
     db: c.env.DB,
     now: () => Math.floor(Date.now() / 1000),
     igClient: new MockInstagramClient(),
-    accessToken: info.appSecretProof,
+    accessToken: info.accessToken,
     igUserId: info.igUserId,
   });
   const result = await manager.deleteIceBreakers(accountId);
@@ -112,8 +93,10 @@ iceBreakerRoutes.delete("/", async (c) => {
 
 iceBreakerRoutes.post("/sync", async (c) => {
   const accountId = c.get("accountId" as never) as string;
-  const info = await getAccountInfo(c.env.DB, accountId, c.env.ENCRYPTION_KEY, c.env.META_APP_SECRET);
-  if (!info) {
+  let info;
+  try {
+    info = await getResolvedAppContext(c.env, accountId);
+  } catch {
     return c.json({ error: "Account not found or token invalid" }, 404);
   }
 
@@ -121,7 +104,7 @@ iceBreakerRoutes.post("/sync", async (c) => {
     db: c.env.DB,
     now: () => Math.floor(Date.now() / 1000),
     igClient: new MockInstagramClient(),
-    accessToken: info.appSecretProof,
+    accessToken: info.accessToken,
     igUserId: info.igUserId,
   });
   const result = await manager.syncIceBreakers(accountId);

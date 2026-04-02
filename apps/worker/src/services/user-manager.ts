@@ -22,8 +22,22 @@ export interface UserDetailResult {
   test_account_id: string | null;
 }
 
-export interface ResetFirstTriggerHistoryResult {
-  cleared: number;
+export interface ResetTestUserStateResult {
+  reset_counts: {
+    message_logs: number;
+    trigger_fire_logs: number;
+    scenario_enrollments: number;
+    form_sessions: number;
+    form_answers: number;
+    ig_user_tags: number;
+    messaging_windows: number;
+    reminder_enrollments: number;
+    reminder_delivery_logs: number;
+    campaign_entries: number;
+    campaign_dispatches: number;
+  };
+  terminated_workflows: number;
+  reset_user_fields: boolean;
   is_test_account: boolean;
 }
 
@@ -447,11 +461,12 @@ export async function setBlocked(
   return ok(undefined);
 }
 
-export async function resetFirstTriggerHistory(
+export async function resetTestUserState(
   db: D1Database,
   accountId: string,
   userId: string,
-): Promise<Result<ResetFirstTriggerHistoryResult, AppError>> {
+  dripWorkflow?: Workflow,
+): Promise<Result<ResetTestUserStateResult, AppError>> {
   const user = await db
     .prepare("SELECT id, ig_scoped_id FROM ig_users WHERE id = ? AND account_id = ? AND is_deleted = 0")
     .bind(userId, accountId)
@@ -475,13 +490,128 @@ export async function resetFirstTriggerHistory(
     );
   }
 
-  const result = await db
+  const enrollmentsResult = await db
+    .prepare(
+      "SELECT id, workflow_instance_id FROM scenario_enrollments WHERE account_id = ? AND ig_user_id = ?",
+    )
+    .bind(accountId, userId)
+    .all<{ id: string; workflow_instance_id: string | null }>();
+
+  let terminatedWorkflows = 0;
+  for (const enrollment of enrollmentsResult.results ?? []) {
+    if (!enrollment.workflow_instance_id || !dripWorkflow) continue;
+    try {
+      const instance = await dripWorkflow.get(enrollment.workflow_instance_id);
+      await instance.terminate();
+      terminatedWorkflows += 1;
+    } catch {
+      // Already completed / missing workflows are ignored during test reset.
+    }
+  }
+
+  const reminderEnrollmentIdsResult = await db
+    .prepare("SELECT id FROM reminder_enrollments WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .all<{ id: string }>();
+
+  let reminderDeliveryLogCount = 0;
+  const reminderEnrollmentIds = (reminderEnrollmentIdsResult.results ?? []).map((row) => row.id);
+  if (reminderEnrollmentIds.length > 0) {
+    const placeholders = reminderEnrollmentIds.map(() => "?").join(", ");
+    const reminderDeliveryDelete = await db
+      .prepare(`DELETE FROM reminder_delivery_logs WHERE enrollment_id IN (${placeholders})`)
+      .bind(...reminderEnrollmentIds)
+      .run();
+    reminderDeliveryLogCount = reminderDeliveryDelete.meta.changes ?? 0;
+  }
+
+  const formAnswerDelete = await db
+    .prepare("DELETE FROM form_answers WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .run();
+
+  const formSessionDelete = await db
+    .prepare("DELETE FROM form_sessions WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .run();
+
+  const messageLogDelete = await db
+    .prepare("DELETE FROM message_logs WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .run();
+
+  const triggerLogDelete = await db
     .prepare("DELETE FROM trigger_fire_logs WHERE ig_user_id = ?")
     .bind(userId)
     .run();
 
+  const campaignDispatchDelete = await db
+    .prepare("DELETE FROM campaign_dispatches WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .run();
+
+  const campaignEntryDelete = await db
+    .prepare("DELETE FROM campaign_entries WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .run();
+
+  const reminderEnrollmentDelete = await db
+    .prepare("DELETE FROM reminder_enrollments WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .run();
+
+  const scenarioEnrollmentDelete = await db
+    .prepare("DELETE FROM scenario_enrollments WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .run();
+
+  const tagDelete = await db
+    .prepare("DELETE FROM ig_user_tags WHERE ig_user_id = ?")
+    .bind(userId)
+    .run();
+
+  const windowDelete = await db
+    .prepare("DELETE FROM messaging_windows WHERE account_id = ? AND ig_user_id = ?")
+    .bind(accountId, userId)
+    .run();
+
+  const now = Math.floor(Date.now() / 1000);
+  const userReset = await db
+    .prepare(
+      `UPDATE ig_users
+       SET metadata = '{}',
+           score = 0,
+           is_opted_out = 0,
+           is_blocked = 0,
+           block_error_count = 0,
+           block_retry_at = NULL,
+           last_interaction_at = NULL,
+           conversation_status = 'unread',
+           custom_status_label = NULL,
+           assigned_operator_id = NULL,
+           control_mode = 'bot',
+           updated_at = ?
+       WHERE id = ? AND account_id = ?`,
+    )
+    .bind(now, userId, accountId)
+    .run();
+
   return ok({
-    cleared: result.meta.changes ?? 0,
+    reset_counts: {
+      message_logs: messageLogDelete.meta.changes ?? 0,
+      trigger_fire_logs: triggerLogDelete.meta.changes ?? 0,
+      scenario_enrollments: scenarioEnrollmentDelete.meta.changes ?? 0,
+      form_sessions: formSessionDelete.meta.changes ?? 0,
+      form_answers: formAnswerDelete.meta.changes ?? 0,
+      ig_user_tags: tagDelete.meta.changes ?? 0,
+      messaging_windows: windowDelete.meta.changes ?? 0,
+      reminder_enrollments: reminderEnrollmentDelete.meta.changes ?? 0,
+      reminder_delivery_logs: reminderDeliveryLogCount,
+      campaign_entries: campaignEntryDelete.meta.changes ?? 0,
+      campaign_dispatches: campaignDispatchDelete.meta.changes ?? 0,
+    },
+    terminated_workflows: terminatedWorkflows,
+    reset_user_fields: (userReset.meta.changes ?? 0) > 0,
     is_test_account: true,
   });
 }

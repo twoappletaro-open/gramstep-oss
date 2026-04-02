@@ -15,7 +15,7 @@ import {
   updateMetadata,
   setOptOut,
   setBlocked,
-  resetFirstTriggerHistory,
+  resetTestUserState,
   registerUserAsTestAccount,
   unregisterUserAsTestAccount,
 } from "../../services/user-manager.js";
@@ -225,12 +225,12 @@ userRoutes.post("/:id/unblock", async (c) => {
   return c.body(null, 204);
 });
 
-// POST /api/users/:id/reset-first-trigger-history
-userRoutes.post("/:id/reset-first-trigger-history", async (c) => {
+// POST /api/users/:id/reset-test-user-state
+userRoutes.post("/:id/reset-test-user-state", async (c) => {
   const accountId = c.get("accountId" as never) as string;
   const userId = c.req.param("id");
 
-  const result = await resetFirstTriggerHistory(c.env.DB, accountId, userId);
+  const result = await resetTestUserState(c.env.DB, accountId, userId, c.env.DRIP_WORKFLOW);
   if (!result.ok) {
     return c.json({ error: result.error.message }, errorStatus(result.error.code));
   }

@@ -2,10 +2,11 @@ import type { Result } from "@gramstep/shared";
 import type { AppError } from "@gramstep/shared";
 import type { Template as TemplateRow, CustomVariable } from "@gramstep/db";
 import type { IgUser } from "@gramstep/db";
-import type { TemplateType, CreateTemplateInput, UpdateTemplateInput } from "@gramstep/shared";
+import type { TemplateType, CreateTemplateInput, UpdateTemplateInput, PackageButton } from "@gramstep/shared";
 import { ok, err, createAppError } from "@gramstep/shared";
 import { generateId } from "@gramstep/db";
 import type { CustomVariableService } from "./custom-variable.js";
+import { buildPackageButtonPayload, parsePackageBody } from "./package-format.js";
 
 export interface RenderedMessage {
   type: TemplateType;
@@ -377,6 +378,26 @@ export function createTemplateEngine(deps: TemplateEngineDeps): TemplateEngineSe
         }
 
         const expanded = expandVariables(row.body, user, userTagNames, customVars);
+
+        const packageBody = parsePackageBody(row.body);
+        if (packageBody) {
+          const payload = packageBody.buttons.length > 0
+            ? JSON.stringify({
+              type: "quick_reply",
+              text: expandVariables(packageBody.text, user, userTagNames, customVars),
+              quick_replies: packageBody.buttons.map((button: PackageButton) => ({
+                content_type: "text",
+                title: expandVariables(button.label, user, userTagNames, customVars),
+                payload: buildPackageButtonPayload(row.id, button.id),
+              })),
+            })
+            : expandVariables(packageBody.text, user, userTagNames, customVars);
+
+          return ok({
+            type: packageBody.buttons.length > 0 ? "quick_reply" as const : "text" as const,
+            payload,
+          });
+        }
 
         return ok({
           type: row.type as TemplateType,

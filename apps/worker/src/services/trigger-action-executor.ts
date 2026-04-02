@@ -1,8 +1,10 @@
 import { generateId } from "@gramstep/db";
+import type { IgUser } from "@gramstep/db";
 import type { Result, AppError, TriggerAction } from "@gramstep/shared";
 import { ok, err, createAppError } from "@gramstep/shared";
-import type { IInstagramClient } from "@gramstep/ig-sdk";
+import type { IInstagramClient, MessagePayload, GenericElement } from "@gramstep/ig-sdk";
 import type { EnrollmentServiceInterface } from "./enrollment-service.js";
+import { createTemplateEngine } from "./template-engine.js";
 
 const SEVEN_DAYS_SECONDS = 7 * 24 * 3600;
 const TWENTY_FOUR_HOURS_SECONDS = 24 * 3600;
@@ -48,11 +50,24 @@ export function createTriggerActionExecutor(
   deps: TriggerActionExecutorDeps,
 ): TriggerActionExecutorService {
   const { db, igClient, enrollmentService, sendQueue, fetchFn } = deps;
+  const templateEngine = createTemplateEngine({ db });
 
   async function executeAction(
     action: TriggerAction,
     ctx: ActionContext,
   ): Promise<Result<void, AppError>> {
+    if ((action as { type: string }).type === "send_template_by_follower_status") {
+      const followerAction = action as unknown as {
+        followerTemplateId: string;
+        nonFollowerTemplateId: string;
+      };
+      return sendTemplateByFollowerStatus(
+        followerAction.followerTemplateId,
+        followerAction.nonFollowerTemplateId,
+        ctx,
+      );
+    }
+
     switch (action.type) {
       case "add_tag":
         return addTag(ctx.igUserId, action.tagId);
@@ -71,10 +86,12 @@ export function createTriggerActionExecutor(
       case "send_reaction":
         return sendReaction(ctx, action.emoji);
       case "send_template":
-        return sendTemplate(ctx);
+        return sendTemplate(action.templateId, ctx);
       case "enter_campaign":
         return enterCampaign(action.campaignId, ctx);
     }
+
+    return err(createAppError("VALIDATION_ERROR", `Unsupported trigger action: ${(action as { type: string }).type}`));
   }
 
   async function addTag(igUserId: string, tagId: string): Promise<Result<void, AppError>> {
@@ -113,6 +130,22 @@ export function createTriggerActionExecutor(
     const surveyService = createSurveyService({
       db,
       sendQueue,
+      sendImmediate: async ({ messageId, igUserId, recipientId, message }) => {
+        const sendResult = await igClient.sendMessage(
+          igUserId,
+          { recipientId, message },
+          ctx.appSecretProof,
+        );
+        if (!sendResult.ok) {
+          return err(createAppError("INSTAGRAM_API_ERROR", sendResult.error.message));
+        }
+        await db
+          .prepare("UPDATE message_logs SET delivery_status = 'sent', ig_message_id = ? WHERE id = ?")
+          .bind(sendResult.value.messageId, messageId)
+          .run()
+          .catch(() => undefined);
+        return ok(undefined);
+      },
     });
     const result = await surveyService.startSurveyForUser(
       surveyId,
@@ -191,18 +224,113 @@ export function createTriggerActionExecutor(
     return ok(undefined);
   }
 
-  async function sendTemplate(ctx: ActionContext): Promise<Result<void, AppError>> {
-    // Phase 1: テキスト直送信のみ（Phase 2のTask 16.1完了後にテンプレートエンジン連携に差替え）
-    const text = ctx.templateText ?? "";
-    if (!text) {
-      return err(createAppError("VALIDATION_ERROR", "templateText is required in Phase 1"));
+  async function loadTemplateRenderContext(
+    ctx: ActionContext,
+  ): Promise<Result<{ user: IgUser; tagNames: string[] }, AppError>> {
+    const user = await db
+      .prepare("SELECT * FROM ig_users WHERE id = ? AND account_id = ?")
+      .bind(ctx.igUserId, ctx.accountId)
+      .first<IgUser>();
+    if (!user) {
+      return err(createAppError("NOT_FOUND", "User not found"));
+    }
+
+    const tagsResult = await db
+      .prepare(
+        `SELECT t.name FROM tags t
+         JOIN ig_user_tags iut ON iut.tag_id = t.id
+         WHERE iut.ig_user_id = ?`,
+      )
+      .bind(ctx.igUserId)
+      .all<{ name: string }>();
+
+    return ok({
+      user,
+      tagNames: (tagsResult.results ?? []).map((tag) => tag.name),
+    });
+  }
+
+  function toMessagePayload(
+    rendered: { type: "text" | "media" | "quick_reply" | "generic"; payload: string },
+  ): Result<MessagePayload, AppError> {
+    switch (rendered.type) {
+      case "text":
+        return ok({ type: "text", text: rendered.payload });
+      case "media":
+        return ok({ type: "image", url: rendered.payload });
+      case "quick_reply": {
+        try {
+          const parsed = JSON.parse(rendered.payload) as Record<string, unknown>;
+          const rawReplies = (parsed.quickReplies ?? parsed.quick_replies ?? []) as Array<Record<string, unknown>>;
+          return ok({
+            type: "quick_reply",
+            text: String(parsed.text ?? ""),
+            quickReplies: rawReplies.map((reply) => ({
+              contentType: "text" as const,
+              title: String(reply.title ?? ""),
+              payload: String(reply.payload ?? reply.title ?? ""),
+            })),
+          });
+        } catch {
+          return err(createAppError("VALIDATION_ERROR", "Quick Reply template payload is invalid"));
+        }
+      }
+      case "generic": {
+        try {
+          const parsed = JSON.parse(rendered.payload) as { elements?: GenericElement[] };
+          return ok({
+            type: "generic",
+            elements: parsed.elements ?? [],
+          });
+        } catch {
+          return err(createAppError("VALIDATION_ERROR", "Generic template payload is invalid"));
+        }
+      }
+    }
+  }
+
+  async function buildTemplateMessage(
+    templateId: string,
+    ctx: ActionContext,
+    renderContext?: { user: IgUser; tagNames: string[] },
+  ): Promise<Result<MessagePayload, AppError>> {
+    if (!templateId) {
+      return err(createAppError("VALIDATION_ERROR", "templateId is required"));
+    }
+
+    const contextResult = renderContext ? ok(renderContext) : await loadTemplateRenderContext(ctx);
+    if (!contextResult.ok) {
+      return err(contextResult.error);
+    }
+
+    const rendered = await templateEngine.renderTemplate(
+      templateId,
+      ctx.accountId,
+      contextResult.value.user,
+      contextResult.value.tagNames,
+    );
+    if (!rendered.ok) {
+      return err(rendered.error);
+    }
+
+    return toMessagePayload(rendered.value);
+  }
+
+  async function sendTemplateMessage(
+    templateId: string,
+    ctx: ActionContext,
+    renderContext?: { user: IgUser; tagNames: string[] },
+  ): Promise<Result<void, AppError>> {
+    const messageResult = await buildTemplateMessage(templateId, ctx, renderContext);
+    if (!messageResult.ok) {
+      return err(messageResult.error);
     }
 
     const result = await igClient.sendMessage(
       ctx.accessToken,
       {
         recipientId: ctx.recipientId,
-        message: { type: "text", text },
+        message: messageResult.value,
       },
       ctx.appSecretProof,
     );
@@ -213,6 +341,47 @@ export function createTriggerActionExecutor(
       );
     }
     return ok(undefined);
+  }
+
+  async function sendTemplate(templateId: string, ctx: ActionContext): Promise<Result<void, AppError>> {
+    return sendTemplateMessage(templateId, ctx);
+  }
+
+  async function sendTemplateByFollowerStatus(
+    followerTemplateId: string,
+    nonFollowerTemplateId: string,
+    ctx: ActionContext,
+  ): Promise<Result<void, AppError>> {
+    const contextResult = await loadTemplateRenderContext(ctx);
+    if (!contextResult.ok) {
+      return err(contextResult.error);
+    }
+
+    let followerStatus = contextResult.value.user.follower_status ?? "unknown";
+    const profileResult = await igClient.getUserProfile(
+      ctx.recipientId,
+      ctx.accessToken,
+      ctx.appSecretProof,
+    );
+    if (profileResult.ok) {
+      const rawFollowerFlag =
+        profileResult.value.is_user_follow_business ?? profileResult.value.isUserFollowingBusiness;
+      if (rawFollowerFlag === true || rawFollowerFlag === false) {
+        followerStatus = rawFollowerFlag ? "following" : "not_following";
+        await db
+          .prepare("UPDATE ig_users SET follower_status = ?, updated_at = ? WHERE id = ?")
+          .bind(followerStatus, Math.floor(Date.now() / 1000), ctx.igUserId)
+          .run()
+          .catch(() => undefined);
+        contextResult.value.user.follower_status = followerStatus;
+      }
+    }
+
+    const selectedTemplateId = followerStatus === "following"
+      ? followerTemplateId
+      : nonFollowerTemplateId;
+
+    return sendTemplateMessage(selectedTemplateId, ctx, contextResult.value);
   }
 
   async function sendPrivateReply(

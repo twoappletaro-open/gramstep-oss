@@ -16,6 +16,7 @@ import type { RateLimiterService } from "./rate-limiter.js";
 import type { WindowManagerService } from "./window-manager.js";
 import { createWindowExpiryService } from "./window-expiry.js";
 import { recordMessageLog } from "./user-registration.js";
+import { loadVariableRenderContext, renderMessagePayloadVariables } from "./message-variable-renderer.js";
 
 export const BACKOFF_BASE_MS = 1000;
 export const MAX_RETRIES = 5;
@@ -217,6 +218,14 @@ export function createDeliveryEngine(deps: DeliveryEngineDeps): DeliveryEngineSe
   }
 
   async function processMessage(msg: SendQueueMessage): Promise<Result<void, AppError>> {
+    const messageLog = await db
+      .prepare("SELECT id FROM message_logs WHERE id = ? AND account_id = ?")
+      .bind(msg.id, msg.accountId)
+      .first<{ id: string }>();
+    if (!messageLog) {
+      return ok(undefined);
+    }
+
     // 1. Rate limit check
     const canSend = await rateLimiter.canSend(msg.accountId, msg.mediaCategory as MediaCategory);
     if (!canSend) {
@@ -269,7 +278,58 @@ export function createDeliveryEngine(deps: DeliveryEngineDeps): DeliveryEngineSe
     await igClient.sendAction(msg.igUserId, "typing_on", msg.recipientId, appSecretProof);
 
     // 4. Resolve message payload (attachment_id cache)
-    let payload: MessagePayload = JSON.parse(msg.messagePayload) as MessagePayload;
+    let payload: MessagePayload;
+    try {
+      const sourcePayload = msg.sourceType === "scenario"
+        ? await (async () => {
+          const renderContext = await loadVariableRenderContext(db, msg.accountId, msg.igUserId);
+          return renderContext
+            ? renderMessagePayloadVariables(msg.messagePayload, renderContext)
+            : msg.messagePayload;
+        })()
+        : msg.messagePayload;
+
+      const parsed = JSON.parse(sourcePayload) as Record<string, unknown>;
+      if (parsed.type === "quick_reply" || Array.isArray(parsed.quick_replies)) {
+        const quickReplies = (parsed.quickReplies ?? parsed.quick_replies ?? []) as Array<Record<string, unknown>>;
+        payload = {
+          type: "quick_reply",
+          text: typeof parsed.text === "string" ? parsed.text : "",
+          quickReplies: quickReplies.map((reply) => ({
+            contentType: "text",
+            title: String(reply.title ?? ""),
+            payload: String(reply.payload ?? ""),
+          })),
+        };
+      } else if (parsed.type === "generic" || parsed.type === "rich_menu" || Array.isArray(parsed.elements)) {
+        payload = {
+          type: "generic",
+          imageAspectRatio: parsed.imageAspectRatio === "horizontal" || parsed.image_aspect_ratio === "horizontal" ? "horizontal" : "square",
+          elements: (parsed.elements ?? []) as MessagePayload extends infer _Never ? never : Array<{ title: string; subtitle?: string; imageUrl?: string; defaultAction?: { type: "web_url"; url: string }; buttons?: Array<{ type: "web_url"; title: string; url: string } | { type: "postback"; title: string; payload: string }> }>,
+        } as unknown as MessagePayload;
+      } else if (parsed.type === "image" || typeof parsed.url === "string") {
+        payload = { type: "image", url: String(parsed.url ?? "") };
+      } else if (parsed.type === "video") {
+        payload = { type: "video", url: String(parsed.url ?? "") };
+      } else if (parsed.type === "audio") {
+        payload = { type: "audio", url: String(parsed.url ?? "") };
+      } else if (typeof parsed.text === "string") {
+        payload = { type: "text", text: parsed.text };
+      } else {
+        payload = { type: "text", text: sourcePayload };
+      }
+    } catch {
+      // プレーンテキスト（シナリオステップのtext型など）はTextMessageに変換
+      const sourcePayload = msg.sourceType === "scenario"
+        ? await (async () => {
+          const renderContext = await loadVariableRenderContext(db, msg.accountId, msg.igUserId);
+          return renderContext
+            ? renderMessagePayloadVariables(msg.messagePayload, renderContext)
+            : msg.messagePayload;
+        })()
+        : msg.messagePayload;
+      payload = { type: "text", text: sourcePayload };
+    }
     if (payload.type === "image" && msg.mediaUrlHash) {
       const cachedId = await lookupCachedAttachmentId(db, msg.accountId, msg.mediaUrlHash);
       payload = resolveMessagePayload(payload, cachedId);

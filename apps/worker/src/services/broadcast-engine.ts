@@ -432,7 +432,7 @@ export function createBroadcastEngine(deps: BroadcastEngineDeps): BroadcastEngin
           igUserId: user.id,
           recipientId: user.ig_scoped_id,
           messagePayload: tpl.body,
-          mediaCategory: tpl.type === "text" ? "text" : "image",
+          mediaCategory: tpl.type === "media" ? "image" : "text",
           sourceType: "broadcast",
           sourceId: broadcastId,
           enrollmentId: null,

@@ -10,7 +10,7 @@ import { Switch } from "../ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { StepFlowEditor, type StepFormData } from "./step-flow-editor";
 import { Tooltip } from "../ui/tooltip";
-import type { TriggerType, CreateScenarioInput, UpdateScenarioInput } from "@gramstep/shared";
+import type { TriggerType, CreateScenarioInput, UpdateScenarioInput, ScenarioMessageType } from "@gramstep/shared";
 
 const TRIGGER_TYPES: { value: TriggerType; label: string }[] = [
   { value: "comment", label: "コメント" },
@@ -74,7 +74,7 @@ export function ScenarioForm({ initialData, onSubmit, loading }: ScenarioFormPro
       step_order: s.step_order,
       delay_seconds: s.delay_seconds,
       absolute_datetime: null,
-      message_type: s.message_type as "text" | "image" | "generic" | "quick_reply",
+      message_type: s.message_type as ScenarioMessageType,
       message_payload: s.message_payload,
       condition_config: s.condition_config,
     }));

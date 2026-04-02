@@ -21,7 +21,8 @@ export function formatFireModeLabel(mode: string): string {
 }
 
 const ACTION_TYPE_LABELS: Record<string, string> = {
-  send_template: "テンプレート送信",
+  send_template: "パッケージ送信",
+  send_template_by_follower_status: "フォロワー条件パッケージ送信",
   add_tag: "タグ追加",
   remove_tag: "タグ削除",
   enroll_scenario: "シナリオ登録",

@@ -3,6 +3,31 @@ import { z } from "zod";
 export const SyncPolicySchema = z.enum(["none", "recent_7d"]);
 export type SyncPolicy = z.infer<typeof SyncPolicySchema>;
 
+export const AppSlotSchema = z.enum(["primary", "secondary"]);
+export type AppSlot = z.infer<typeof AppSlotSchema>;
+
+export const SecondaryMetaAppSchema = z.object({
+  metaAppId: z.string().min(1),
+  metaAppSecret: z.string().min(1),
+  webhookVerifyToken: z.string().min(1),
+});
+export type SecondaryMetaApp = z.infer<typeof SecondaryMetaAppSchema>;
+
+export const AppFailoverConfigSchema = z.object({
+  secondaryApp: SecondaryMetaAppSchema.nullable().default(null),
+});
+export type AppFailoverConfig = z.infer<typeof AppFailoverConfigSchema>;
+
+export const AccountAppFailoverSchema = z.object({
+  activeSlot: AppSlotSchema.default("primary"),
+  secondaryTokenEncrypted: z.string().nullable().default(null),
+  secondaryTokenExpiresAt: z.number().int().nullable().default(null),
+  secondaryIgUserId: z.string().nullable().default(null),
+  secondaryIgUsername: z.string().nullable().default(null),
+  lastSwitchedAt: z.number().int().nullable().default(null),
+});
+export type AccountAppFailover = z.infer<typeof AccountAppFailoverSchema>;
+
 export const AccountSettingsSchema = z.object({
   delivery_window_start: z.number().int().min(0).max(23).default(9),
   delivery_window_end: z.number().int().min(0).max(23).default(23),
@@ -34,6 +59,11 @@ export type MatchType = z.infer<typeof MatchTypeSchema>;
 
 export const TriggerActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("send_template"), templateId: z.string() }),
+  z.object({
+    type: z.literal("send_template_by_follower_status"),
+    followerTemplateId: z.string(),
+    nonFollowerTemplateId: z.string(),
+  }),
   z.object({ type: z.literal("add_tag"), tagId: z.string() }),
   z.object({ type: z.literal("remove_tag"), tagId: z.string() }),
   z.object({ type: z.literal("enroll_scenario"), scenarioId: z.string() }),
@@ -101,11 +131,14 @@ export const ConditionConfigSchema = z.object({
 });
 export type ConditionConfig = z.infer<typeof ConditionConfigSchema>;
 
+export const ScenarioMessageTypeSchema = z.enum(["text", "image", "generic", "rich_menu", "quick_reply"]);
+export type ScenarioMessageType = z.infer<typeof ScenarioMessageTypeSchema>;
+
 export const CreateStepInputSchema = z.object({
   step_order: z.number().int().min(1),
   delay_seconds: z.number().int().min(0).default(0),
   absolute_datetime: z.number().int().nullable().default(null),
-  message_type: z.enum(["text", "image", "generic", "quick_reply"]),
+  message_type: ScenarioMessageTypeSchema,
   message_payload: z.string(),
   condition_config: ConditionConfigSchema.nullable().default(null),
 });
@@ -256,6 +289,87 @@ export const TemplateVariableSchema = z.object({
 });
 export type TemplateVariable = z.infer<typeof TemplateVariableSchema>;
 
+export const PackageButtonActionSchema = z.object({
+  type: z.literal("send_message"),
+  selectionMode: z.enum(["specific", "random", "follower_condition"]).optional(),
+  packageId: z.string().optional(),
+  packageIds: z.array(z.string()).default([]),
+  useFollowerCondition: z.boolean().default(false),
+  followerPackageId: z.string().optional(),
+  nonFollowerPackageId: z.string().optional(),
+}).superRefine((value, ctx) => {
+  const mode = value.selectionMode ?? (value.useFollowerCondition ? "follower_condition" : "specific");
+
+  if (mode === "follower_condition") {
+    if (!value.followerPackageId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["followerPackageId"],
+        message: "followerPackageId is required when follower condition is enabled",
+      });
+    }
+    if (!value.nonFollowerPackageId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["nonFollowerPackageId"],
+        message: "nonFollowerPackageId is required when follower condition is enabled",
+      });
+    }
+    return;
+  }
+
+  if (mode === "random") {
+    if (value.packageIds.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["packageIds"],
+        message: "packageIds is required when random selection is enabled",
+      });
+    }
+    return;
+  }
+
+  if (!value.packageId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["packageId"],
+      message: "packageId is required when specific selection is enabled",
+    });
+  }
+});
+export type PackageButtonAction = z.infer<typeof PackageButtonActionSchema>;
+
+export const PackageButtonSchema = z.object({
+  id: z.string().min(1).max(100),
+  label: z.string().min(1).max(20),
+  action: PackageButtonActionSchema,
+});
+export type PackageButton = z.infer<typeof PackageButtonSchema>;
+
+export const PackageBodySchema = z.object({
+  version: z.literal(1),
+  kind: z.literal("package"),
+  text: z.string().min(1).max(1000),
+  buttons: z.array(PackageButtonSchema).max(13).default([]),
+});
+export type PackageBody = z.infer<typeof PackageBodySchema>;
+
+export const CreatePackageInputSchema = z.object({
+  name: z.string().min(1).max(255),
+  text: z.string().min(1).max(1000),
+  buttons: z.array(PackageButtonSchema).max(13).default([]),
+});
+export type CreatePackageInput = z.infer<typeof CreatePackageInputSchema>;
+
+export const UpdatePackageInputSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  text: z.string().min(1).max(1000).optional(),
+  buttons: z.array(PackageButtonSchema).max(13).optional(),
+  is_active: z.boolean().optional(),
+  version: z.number().int(),
+});
+export type UpdatePackageInput = z.infer<typeof UpdatePackageInputSchema>;
+
 export const CreateTemplateInputSchema = z.object({
   name: z.string().min(1).max(255),
   type: TemplateTypeSchema,
@@ -302,10 +416,41 @@ export type ChatControlMode = z.infer<typeof ChatControlModeSchema>;
 
 export const SendManualMessageInputSchema = z.object({
   ig_user_id: z.string().min(1),
-  message_type: z.enum(["text", "image"]),
-  content: z.string().min(1).max(2000),
-  media_url: z.string().url().optional(),
-});
+}).and(
+  z.discriminatedUnion("message_type", [
+    z.object({
+      message_type: z.literal("text"),
+      content: z.string().min(1).max(2000),
+      scheduled_at: z.number().int().optional(),
+    }),
+    z.object({
+      message_type: z.literal("image"),
+      content: z.string().max(2000).optional(),
+      media_url: z.string().url(),
+      media_r2_key: z.string().min(1).optional(),
+      scheduled_at: z.number().int().optional(),
+    }),
+    z.object({
+      message_type: z.literal("video"),
+      content: z.string().max(2000).optional(),
+      media_url: z.string().url(),
+      media_r2_key: z.string().min(1).optional(),
+      scheduled_at: z.number().int().optional(),
+    }),
+    z.object({
+      message_type: z.literal("audio"),
+      content: z.string().max(2000).optional(),
+      media_url: z.string().url(),
+      media_r2_key: z.string().min(1).optional(),
+      scheduled_at: z.number().int().optional(),
+    }),
+    z.object({
+      message_type: z.literal("package"),
+      package_id: z.string().min(1),
+      scheduled_at: z.number().int().optional(),
+    }),
+  ]),
+);
 export type SendManualMessageInput = z.infer<typeof SendManualMessageInputSchema>;
 
 export const ChatFiltersSchema = z.object({
@@ -408,7 +553,7 @@ export type SegmentCondition = z.infer<typeof SegmentConditionSchema>;
 
 export const SegmentFilterSchema = z.object({
   logic: SegmentOperatorSchema,
-  conditions: z.array(SegmentConditionSchema).min(1),
+  conditions: z.array(SegmentConditionSchema).min(0),
 });
 export type SegmentFilter = z.infer<typeof SegmentFilterSchema>;
 
@@ -580,8 +725,32 @@ export type UpdateCustomVariableInput = z.infer<typeof UpdateCustomVariableInput
 export const AnalyticsPeriodSchema = z.enum(["7d", "30d", "90d"]);
 export type AnalyticsPeriod = z.infer<typeof AnalyticsPeriodSchema>;
 
+const AnalyticsDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
 export const AnalyticsQuerySchema = z.object({
   period: AnalyticsPeriodSchema.default("30d"),
+  date_from: AnalyticsDateSchema.optional(),
+  date_to: AnalyticsDateSchema.optional(),
+}).superRefine((value, ctx) => {
+  const hasDateFrom = Boolean(value.date_from);
+  const hasDateTo = Boolean(value.date_to);
+
+  if (hasDateFrom !== hasDateTo) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "date_from and date_to must be provided together",
+      path: hasDateFrom ? ["date_to"] : ["date_from"],
+    });
+    return;
+  }
+
+  if (value.date_from && value.date_to && value.date_from > value.date_to) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "date_from must be before or equal to date_to",
+      path: ["date_from"],
+    });
+  }
 });
 export type AnalyticsQuery = z.infer<typeof AnalyticsQuerySchema>;
 

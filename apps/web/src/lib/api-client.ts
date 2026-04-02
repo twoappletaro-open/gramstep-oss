@@ -12,6 +12,8 @@ import type {
   UpdateCampaignInput,
   CreateSurveyInput,
   UpdateSurveyInput,
+  CreatePackageInput,
+  UpdatePackageInput,
 } from "@gramstep/shared";
 
 /**
@@ -52,11 +54,18 @@ function getToken(): string {
     : "";
 }
 
+function getStoredAccountId(): string {
+  return typeof localStorage !== "undefined"
+    ? localStorage.getItem("gramstep_account_id") ?? ""
+    : "";
+}
+
 function headers(accountId: string): Record<string, string> {
+  const resolvedAccountId = accountId || getStoredAccountId();
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${getToken()}`,
-    "x-account-id": accountId,
+    "x-account-id": resolvedAccountId,
   };
 }
 
@@ -344,6 +353,24 @@ function buildSurveys(baseUrl: string) {
         return { ok: false, error: { status: 0, message: e instanceof Error ? e.message : "Network error" } };
       }
     },
+
+    responses(accountId: string, surveyId: string, params?: { limit?: number; offset?: number }) {
+      const limit = params?.limit ?? 50;
+      const offset = params?.offset ?? 0;
+      return request<unknown[]>(
+        baseUrl,
+        `/api/surveys/${surveyId}/responses?limit=${limit}&offset=${offset}`,
+        {
+        accountId,
+        },
+      );
+    },
+
+    report(accountId: string, surveyId: string) {
+      return request<unknown>(baseUrl, `/api/surveys/${surveyId}/report`, {
+        accountId,
+      });
+    },
   };
 }
 
@@ -360,6 +387,47 @@ function buildTemplates(baseUrl: string) {
 
     get(id: string) {
       return request<unknown>(baseUrl, `/api/templates/${id}`, {});
+    },
+  };
+}
+
+function buildPackages(baseUrl: string) {
+  return {
+    list(accountId: string) {
+      return request<unknown[]>(baseUrl, "/api/packages", { accountId });
+    },
+
+    get(id: string) {
+      return request<unknown>(baseUrl, `/api/packages/${id}`, {});
+    },
+
+    create(accountId: string, input: CreatePackageInput) {
+      return request<unknown>(baseUrl, "/api/packages", {
+        method: "POST",
+        body: JSON.stringify(input),
+        accountId,
+      });
+    },
+
+    update(id: string, input: UpdatePackageInput) {
+      return request<unknown>(baseUrl, `/api/packages/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      });
+    },
+
+    delete(id: string) {
+      return request<undefined>(baseUrl, `/api/packages/${id}`, {
+        method: "DELETE",
+      });
+    },
+  };
+}
+
+function buildVariables(baseUrl: string) {
+  return {
+    options(accountId: string) {
+      return request<unknown>(baseUrl, "/api/variables/options", { accountId });
     },
   };
 }
@@ -399,9 +467,10 @@ function buildUsers(baseUrl: string) {
       });
     },
 
-    removeTag(userId: string, tagId: string) {
+    removeTag(userId: string, accountId: string, tagId: string) {
       return request<undefined>(baseUrl, `/api/users/${userId}/tags/${tagId}`, {
         method: "DELETE",
+        accountId,
       });
     },
 
@@ -440,10 +509,15 @@ function buildUsers(baseUrl: string) {
       });
     },
 
-    resetFirstTriggerHistory(userId: string, accountId: string) {
-      return request<{ cleared: number; is_test_account: boolean }>(
+    resetTestUserState(userId: string, accountId: string) {
+      return request<{
+        reset_counts: Record<string, number>;
+        terminated_workflows: number;
+        reset_user_fields: boolean;
+        is_test_account: boolean;
+      }>(
         baseUrl,
-        `/api/users/${userId}/reset-first-trigger-history`,
+        `/api/users/${userId}/reset-test-user-state`,
         {
           method: "POST",
           accountId,
@@ -541,9 +615,11 @@ function buildChats(baseUrl: string) {
 
 function buildAnalytics(baseUrl: string) {
   return {
-    delivery(accountId: string, params?: { period?: string }) {
+    delivery(accountId: string, params?: { period?: string; date_from?: string; date_to?: string }) {
       const p = new URLSearchParams();
       if (params?.period) p.set("period", params.period);
+      if (params?.date_from) p.set("date_from", params.date_from);
+      if (params?.date_to) p.set("date_to", params.date_to);
       const qs = p.toString();
       return request<DeliveryMetricsResponse>(
         baseUrl,
@@ -554,6 +630,62 @@ function buildAnalytics(baseUrl: string) {
 
     health(accountId: string) {
       return request<AccountHealthResponse>(baseUrl, "/api/analytics/health", {
+        accountId,
+      });
+    },
+  };
+}
+
+function buildBroadcasts(baseUrl: string) {
+  return {
+    list(accountId: string) {
+      return request<unknown[]>(baseUrl, "/api/broadcasts", {
+        accountId,
+      });
+    },
+
+    get(id: string, accountId: string) {
+      return request<unknown>(baseUrl, `/api/broadcasts/${id}`, {
+        accountId,
+      });
+    },
+
+    create(accountId: string, input: unknown) {
+      return request<unknown>(baseUrl, "/api/broadcasts", {
+        method: "POST",
+        body: JSON.stringify(input),
+        accountId,
+      });
+    },
+
+    update(id: string, accountId: string, input: unknown) {
+      return request<unknown>(baseUrl, `/api/broadcasts/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+        accountId,
+      });
+    },
+
+    delete(id: string, accountId: string) {
+      return request<undefined>(baseUrl, `/api/broadcasts/${id}`, {
+        method: "DELETE",
+        accountId,
+      });
+    },
+
+    preview(accountId: string, input: unknown) {
+      return request<unknown>(baseUrl, "/api/broadcasts/preview", {
+        method: "POST",
+        body: JSON.stringify(input),
+        accountId,
+      });
+    },
+
+    recipients(id: string, accountId: string, params?: { page?: number; limit?: number }) {
+      const p = new URLSearchParams();
+      p.set("page", String(params?.page ?? 1));
+      p.set("limit", String(params?.limit ?? 20));
+      return request<unknown>(baseUrl, `/api/broadcasts/${id}/recipients?${p}`, {
         accountId,
       });
     },
@@ -696,9 +828,12 @@ export type ApiClient = {
   automations: ReturnType<typeof buildAutomations>;
   surveys: ReturnType<typeof buildSurveys>;
   templates: ReturnType<typeof buildTemplates>;
+  packages: ReturnType<typeof buildPackages>;
+  variables: ReturnType<typeof buildVariables>;
   users: ReturnType<typeof buildUsers>;
   chats: ReturnType<typeof buildChats>;
   analytics: ReturnType<typeof buildAnalytics>;
+  broadcasts: ReturnType<typeof buildBroadcasts>;
   campaigns: ReturnType<typeof buildCampaigns>;
 };
 
@@ -709,9 +844,12 @@ export function createApiClient(baseUrl: string): ApiClient {
     automations: buildAutomations(baseUrl),
     surveys: buildSurveys(baseUrl),
     templates: buildTemplates(baseUrl),
+    packages: buildPackages(baseUrl),
+    variables: buildVariables(baseUrl),
     users: buildUsers(baseUrl),
     chats: buildChats(baseUrl),
     analytics: buildAnalytics(baseUrl),
+    broadcasts: buildBroadcasts(baseUrl),
     campaigns: buildCampaigns(baseUrl),
   };
 }

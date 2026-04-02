@@ -20,7 +20,7 @@ import type {
 
 type SurveyStepForm = CreateSurveyStepInput;
 
-type TemplateOption = { id: string; name: string };
+type PackageOption = { id: string; name: string };
 type FieldOption = { value: string; label: string; source: "default" | "custom" };
 
 type SurveyFormProps = {
@@ -59,17 +59,17 @@ export function SurveyForm({ initialData, onSubmit, loading }: SurveyFormProps) 
   const [steps, setSteps] = useState<SurveyStepForm[]>(
     initialData?.steps?.length ? initialData.steps : [makeStep(1)],
   );
-  const [templates, setTemplates] = useState<TemplateOption[]>([]);
+  const [packages, setPackages] = useState<PackageOption[]>([]);
   const [fieldOptions, setFieldOptions] = useState<FieldOption[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accountId || !apiUrl) return;
-    client.templates.list(accountId).then((result) => {
+    client.packages.list(accountId).then((result) => {
       if (result.ok) {
-        setTemplates((result.value as Array<Record<string, unknown>>).map((template) => ({
-          id: String(template.id ?? ""),
-          name: String(template.name ?? ""),
+        setPackages((result.value as Array<Record<string, unknown>>).map((pkg) => ({
+          id: String(pkg.id ?? ""),
+          name: String(pkg.name ?? ""),
         })));
       }
     }).catch(() => {});
@@ -180,15 +180,15 @@ export function SurveyForm({ initialData, onSubmit, loading }: SurveyFormProps) 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="completion-template">終了時に送るテンプレート</Label>
+            <Label htmlFor="completion-template">終了時に送るパッケージ</Label>
             <Select
               id="completion-template"
               value={completionTemplateId}
               onChange={(e) => setCompletionTemplateId(e.target.value)}
             >
               <option value="">送信しない</option>
-              {templates.map((template) => (
-                <option key={template.id} value={template.id}>{template.name}</option>
+              {packages.map((pkg) => (
+                <option key={pkg.id} value={pkg.id}>{pkg.name}</option>
               ))}
             </Select>
           </div>

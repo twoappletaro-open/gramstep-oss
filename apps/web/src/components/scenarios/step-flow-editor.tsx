@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { getApiUrl } from "../../lib/api-client";
 import { Button } from "../ui/button";
@@ -10,6 +10,7 @@ import { Select } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { Card, CardContent } from "../ui/card";
 import { Tooltip } from "../ui/tooltip";
+import { VariablePalette } from "../shared/variable-palette";
 import type { ConditionConfig } from "@gramstep/shared";
 
 export type StepFormData = {
@@ -30,8 +31,28 @@ const MESSAGE_TYPES = [
   { value: "text", label: "テキスト", hint: "プレーンテキストメッセージ（最大1,000文字）" },
   { value: "image", label: "画像", hint: "画像URL付きメッセージ（8MB以内）" },
   { value: "generic", label: "カルーセル", hint: "タイトル+画像+ボタン付きリッチカード。商品紹介等に最適" },
+  { value: "rich_menu", label: "リッチメニュー", hint: "画像・タイトル・ボタンをまとめて送るカード一覧。最大10カード、各3ボタンまで" },
   { value: "quick_reply", label: "クイックリプライ", hint: "選択ボタン付きメッセージ（最大13個）。回答でフロー分岐可能" },
 ];
+
+function defaultPayloadForType(type: string): string {
+  switch (type) {
+    case "text":
+      return JSON.stringify({ type: "text", text: "" });
+    case "image":
+      return JSON.stringify({ type: "image", url: "" });
+    case "quick_reply":
+      return JSON.stringify({ type: "quick_reply", text: "", quick_replies: [] });
+    case "generic":
+    case "rich_menu":
+      return JSON.stringify({
+        type,
+        elements: [{ title: "", subtitle: "", image_url: "", buttons: [] }],
+      });
+    default:
+      return "";
+  }
+}
 
 function formatDelay(seconds: number): string {
   if (seconds === 0) return "即時送信";
@@ -49,7 +70,7 @@ export function StepFlowEditor({ steps, onChange, errors }: StepFlowEditorProps)
       if (i !== index) return s;
       // タイプ変更時にペイロードをリセット
       if (patch.message_type && patch.message_type !== s.message_type) {
-        return { ...s, ...patch, message_payload: "" };
+        return { ...s, ...patch, message_payload: defaultPayloadForType(patch.message_type) };
       }
       return { ...s, ...patch };
     });
@@ -64,7 +85,7 @@ export function StepFlowEditor({ steps, onChange, errors }: StepFlowEditorProps)
         step_order: nextOrder,
         delay_seconds: 0,
         message_type: "text",
-        message_payload: "",
+        message_payload: defaultPayloadForType("text"),
         condition_config: null,
       },
     ]);
@@ -234,6 +255,7 @@ function MessagePayloadEditor({
   placeholder: string;
 }) {
   const parsed = parsePayload(payload, type);
+  const textRef = useRef<HTMLTextAreaElement | null>(null);
 
   function update(patch: Partial<PayloadJson>) {
     onChange(JSON.stringify({ ...parsed, ...patch }));
@@ -248,8 +270,18 @@ function MessagePayloadEditor({
     return (
       <div className="space-y-2">
         <div className="space-y-1">
-          <Label>メッセージ本文</Label>
+          <div className="flex items-center gap-2">
+            <Label>メッセージ本文</Label>
+            <VariablePalette
+              value={parsed.text ?? ""}
+              onChange={(nextValue) => update({ text: nextValue })}
+              inputRef={textRef}
+              buttonLabel="変数"
+              compact
+            />
+          </div>
           <Textarea
+            ref={textRef}
             value={parsed.text ?? ""}
             onChange={(e) => update({ text: e.target.value })}
             rows={2}
@@ -312,8 +344,8 @@ function MessagePayloadEditor({
     );
   }
 
-  if (type === "generic") {
-    return <GenericCardEditor payload={payload} onChange={onChange} />;
+  if (type === "generic" || type === "rich_menu") {
+    return <GenericCardEditor mode={type} payload={payload} onChange={onChange} />;
   }
 
   // text (default) — 純粋なテキストのみ扱う
@@ -327,8 +359,18 @@ function MessagePayloadEditor({
   })();
   return (
     <div className="space-y-1">
-      <Label>メッセージ内容</Label>
+      <div className="flex items-center gap-2">
+        <Label>メッセージ内容</Label>
+        <VariablePalette
+          value={textValue}
+          onChange={(nextValue) => onChange(JSON.stringify({ type: "text", text: nextValue }))}
+          inputRef={textRef}
+          buttonLabel="変数"
+          compact
+        />
+      </div>
       <Textarea
+        ref={textRef}
         value={textValue}
         onChange={(e) => onChange(JSON.stringify({ type: "text", text: e.target.value }))}
         rows={3}
@@ -344,6 +386,10 @@ function ImageUploadEditor({ url, onChange }: { url: string; onChange: (url: str
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(url);
   const apiUrl = getApiUrl();
+
+  useEffect(() => {
+    setPreview(url);
+  }, [url]);
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -417,7 +463,7 @@ function ImageUploadEditor({ url, onChange }: { url: string; onChange: (url: str
           <img
             src={preview}
             alt="プレビュー"
-            className="max-h-32 rounded border object-contain"
+            className="block max-h-32 max-w-full rounded border object-contain"
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
         </div>
@@ -443,12 +489,20 @@ function parseCards(raw: string): GenericCard[] {
   }
 }
 
-function GenericCardEditor({ payload, onChange }: { payload: string; onChange: (v: string) => void }) {
+function GenericCardEditor({
+  mode,
+  payload,
+  onChange,
+}: {
+  mode: "generic" | "rich_menu";
+  payload: string;
+  onChange: (v: string) => void;
+}) {
   const cards = parseCards(payload);
   if (cards.length === 0) cards.push({ title: "", subtitle: "", image_url: "", buttons: [] });
 
   function updateCards(updated: GenericCard[]) {
-    onChange(JSON.stringify({ type: "generic", elements: updated }));
+    onChange(JSON.stringify({ type: mode, elements: updated }));
   }
 
   function updateCard(ci: number, patch: Partial<GenericCard>) {
@@ -486,9 +540,14 @@ function GenericCardEditor({ payload, onChange }: { payload: string; onChange: (
   return (
     <div className="space-y-3">
       <Label className="flex items-center gap-1">
-        カルーセルカード
-        <Tooltip content="横スクロールで表示されるカード。各カードにタイトル・説明・画像・ボタンを設定可能" />
+        {mode === "rich_menu" ? "リッチメニューカード" : "カルーセルカード"}
+        <Tooltip content={mode === "rich_menu"
+          ? "カード型のリッチメニューを送信します。各カードに画像・タイトル・説明・ボタンを設定できます"
+          : "横スクロールで表示されるカード。各カードにタイトル・説明・画像・ボタンを設定可能"} />
       </Label>
+      <p className="text-xs text-muted-foreground">
+        最大10カード、各カードにつきボタンは3個までを推奨します。
+      </p>
 
       {cards.map((card, ci) => (
         <div key={ci} className="rounded-lg border bg-gray-50 p-3 space-y-2">
@@ -550,14 +609,14 @@ function GenericCardEditor({ payload, onChange }: { payload: string; onChange: (
                   onClick={() => removeButton(ci, bi)}>×</Button>
               </div>
             ))}
-            <Button type="button" variant="outline" size="sm" onClick={() => addButton(ci)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => addButton(ci)} disabled={card.buttons.length >= 3}>
               + ボタン追加
             </Button>
           </div>
         </div>
       ))}
 
-      <Button type="button" variant="outline" size="sm" onClick={addCard}>
+      <Button type="button" variant="outline" size="sm" onClick={addCard} disabled={cards.length >= 10}>
         + カードを追加
       </Button>
     </div>

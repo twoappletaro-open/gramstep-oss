@@ -1,0 +1,27 @@
+<svg width="1080" height="1080" viewBox="0 0 1080 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="72" y1="64" x2="1006" y2="1008" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7E7"/>
+      <stop offset="1" stop-color="#FFD8B5"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" rx="48" fill="url(#bg)"/>
+  <rect x="164" y="138" width="752" height="804" rx="42" fill="#FFFDF9"/>
+  <rect x="226" y="206" width="228" height="18" rx="9" fill="#1A3A5F" fill-opacity="0.18"/>
+  <rect x="226" y="266" width="628" height="124" rx="28" fill="#FFF0DD"/>
+  <circle cx="286" cy="328" r="24" fill="#FFAF69"/>
+  <rect x="334" y="304" width="210" height="14" rx="7" fill="#1A3A5F" fill-opacity="0.82"/>
+  <rect x="334" y="332" width="296" height="12" rx="6" fill="#1A3A5F" fill-opacity="0.22"/>
+  <rect x="226" y="428" width="628" height="124" rx="28" fill="#FFF7EC"/>
+  <circle cx="286" cy="490" r="24" fill="#1A3A5F"/>
+  <rect x="334" y="466" width="242" height="14" rx="7" fill="#1A3A5F" fill-opacity="0.82"/>
+  <rect x="334" y="494" width="328" height="12" rx="6" fill="#1A3A5F" fill-opacity="0.22"/>
+  <rect x="226" y="590" width="628" height="124" rx="28" fill="#FFF0DD"/>
+  <circle cx="286" cy="652" r="24" fill="#FFAF69"/>
+  <rect x="334" y="628" width="188" height="14" rx="7" fill="#1A3A5F" fill-opacity="0.82"/>
+  <rect x="334" y="656" width="268" height="12" rx="6" fill="#1A3A5F" fill-opacity="0.22"/>
+  <rect x="226" y="760" width="292" height="110" rx="24" fill="#1A3A5F"/>
+  <rect x="562" y="760" width="292" height="110" rx="24" fill="#FFAF69"/>
+  <text x="224" y="915" fill="#1A3A5F" font-size="64" font-weight="700" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">アンケート</text>
+  <text x="224" y="972" fill="#516A84" font-size="34" font-weight="500" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">回答でタグと温度感を取る</text>
+</svg>
