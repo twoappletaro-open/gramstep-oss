@@ -8,10 +8,24 @@ import type { SetupState } from "../lib/state.js";
 export async function connectInstagram(state: SetupState, _projectDir: string): Promise<void> {
   p.log.step(pc.bold("Instagramアカウント接続 & Meta Console 設定"));
 
-  // --- 1. Token paste ---
+  // --- 1. Instagram Business Login ---
+  const oauthRedirectUrl = `${state.workerUrl}/api/auth/callback`;
+  p.log.step(pc.bold("Instagramビジネスログインを設定"));
+  p.log.info("Facebook / Meta Developers で " + pc.yellow("「Instagramビジネスログインを設定」") + " を開いてください。");
+  p.log.info("");
+  p.log.info(`  リダイレクトURL: ${pc.cyan(oauthRedirectUrl)}`);
+  p.log.info("");
+  p.log.info("ログインフロー完了後の遷移先として、上記 URL を追加してください。");
+  const businessLoginDone = await p.confirm({
+    message: "InstagramビジネスログインのリダイレクトURLを設定しましたか？",
+    initialValue: true,
+  });
+  if (p.isCancel(businessLoginDone)) throw new SetupError("ユーザーがキャンセルしました");
+
+  // --- 2. Token paste ---
   await registerToken(state);
 
-  // --- 2. Webhook subscription ---
+  // --- 3. Webhook subscription ---
   p.log.step(pc.bold("Webhookサブスクリプションをオン"));
   p.log.info("トークン生成画面で " + pc.yellow("「Webhookサブスクリプション」をオン") + " にしてください。");
   const webhookSubDone = await p.confirm({
@@ -20,7 +34,7 @@ export async function connectInstagram(state: SetupState, _projectDir: string): 
   });
   if (p.isCancel(webhookSubDone)) throw new SetupError("ユーザーがキャンセルしました");
 
-  // --- 3. Webhook configuration ---
+  // --- 4. Webhook configuration ---
   const webhookUrl = `${state.workerUrl}/webhook`;
   p.log.step(pc.bold("Webhooksを設定"));
   p.log.info("ユースケース → カスタマイズ → " + pc.yellow("「3. Webhooksを設定する」") + " を開いてください。");
@@ -35,7 +49,7 @@ export async function connectInstagram(state: SetupState, _projectDir: string): 
   });
   if (p.isCancel(webhookDone)) throw new SetupError("ユーザーがキャンセルしました");
 
-  // --- 4. App Review ---
+  // --- 5. App Review ---
   p.log.step(pc.bold("アプリレビュー"));
   p.log.info("ダッシュボード → " + pc.yellow("「アプリレビュー」") + " へ移動してください。");
   p.log.info(pc.dim("※ 詳しい申請手順はセットアップ完了後のサマリーに表示されます。"));

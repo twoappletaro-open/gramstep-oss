@@ -28,6 +28,8 @@ ${pc.bold("Meta Developers アプリ事前準備:")}
 
   5. 設定 → 基本 から ${pc.bold("アプリID")} と ${pc.bold("app secret")} を取得
 
+  6. ${pc.dim("後続のCLIステップで Instagramビジネスログイン のリダイレクトURL設定を案内します")}
+
 `;
 
 /** Collect Instagram API credentials and generate secrets */
