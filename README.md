@@ -447,13 +447,18 @@ curl -X POST https://<your-worker>.workers.dev/api/auth/manual-token \
 - **Callback URL**: `https://<your-worker>.workers.dev/webhook`
 - **Verify Token**: セットアップ時に自動生成（CLIに表示）
 
-### Step 9: アプリレビューのページを確認
+### Step 9: ビジネスログインを設定
+
+ユースケース → カスタマイズ → 「Instagramビジネスログインを設定」：
+- OAuth リダイレクトURI: `https://<your-worker>.workers.dev/api/auth/callback`
+
+### Step 10: アプリレビューのページを確認
 
 ダッシュボード → 「アプリレビュー」へ移動
 
 補足:
 - このステップでは「詳しい申請手順はセットアップ完了後のサマリーに表示される」と案内されます
-- OAuth リダイレクトURIや Privacy Policy URL は、ここではまだ表示されません
+- Privacy Policy URL やデータ削除URLは、完了後のサマリーにも再掲されます
 
 ### セットアップ完了後にCLIが表示する内容
 
