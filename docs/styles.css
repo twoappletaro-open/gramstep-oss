@@ -240,7 +240,8 @@ a {
 .oss-panel li,
 .faq-list p,
 .cta-card p,
-.mini-panel p {
+.mini-panel p,
+.install-callout p {
   line-height: 1.75;
   color: var(--muted);
 }
@@ -258,6 +259,45 @@ a {
   padding: 0;
   margin: 24px 0 0;
   list-style: none;
+}
+
+.install-callout {
+  width: min(100%, 560px);
+  margin: 22px auto 0;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.64);
+  text-align: left;
+}
+
+.install-label {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-family: "Manrope", sans-serif;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.install-callout pre,
+.install-card h3 code {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  overflow-x: auto;
+  background: #1f241f;
+  color: #f7f2e8;
+  font-family: "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.install-callout p {
+  margin: 12px 0 0;
+  font-size: 0.95rem;
 }
 
 .hero-points li {
@@ -415,6 +455,10 @@ a {
     radial-gradient(circle at top right, rgba(216, 239, 229, 0.78), transparent 26%),
     radial-gradient(circle at bottom left, rgba(231, 140, 74, 0.16), transparent 24%),
     var(--paper);
+}
+
+.install-card h3 {
+  margin: 0 0 14px;
 }
 
 .demo-label {
