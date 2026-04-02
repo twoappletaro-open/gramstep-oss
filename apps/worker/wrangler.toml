@@ -1,0 +1,48 @@
+name = "gramstep-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+META_API_VERSION = "v25.0"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gramstep"
+database_id = "<YOUR_DB_ID>"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "<YOUR_KV_ID>"
+
+[[queues.producers]]
+binding = "SEND_QUEUE"
+queue = "gramstep-send"
+
+[[queues.consumers]]
+queue = "gramstep-send"
+max_batch_size = 10
+max_batch_timeout = 5
+dead_letter_queue = "gramstep-dlq"
+
+[[queues.producers]]
+binding = "DLQ"
+queue = "gramstep-dlq"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "gramstep-storage"
+
+[[workflows]]
+binding = "DRIP_WORKFLOW"
+name = "gramstep-drip-workflow"
+class_name = "DripWorkflow"
+
+[triggers]
+crons = [
+  "*/5 * * * *",
+  "0 3 * * *",
+  "0 4 * * *",
+  "*/15 * * * *",
+  "0 5 * * *"
+]

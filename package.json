@@ -1,0 +1,23 @@
+{
+  "name": "gramstep",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@10.31.0",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "yaml": "^2.8.3"
+  }
+}
