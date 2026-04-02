@@ -389,6 +389,17 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       }),
     },
     {
+      id: "tpl_demo_default_fallback",
+      name: "デモ誘導フォールバック",
+      type: "quick_reply",
+      body: json({
+        text: "デモと打ってみてください。",
+        quick_replies: [
+          { content_type: "text", title: "デモ", payload: "デモ" },
+        ],
+      }),
+    },
+    {
       id: "pkg_demo_entry",
       name: "フォロワー条件デモパッケージ",
       type: "quick_reply",
@@ -1048,6 +1059,19 @@ export async function seedDemoData(input: BootstrapDemoInput): Promise<DemoSeedS
       fireMode: "unlimited",
       actions: [
         { type: "send_template", templateId: "pkg_demo_entry" },
+      ],
+    },
+    {
+      id: "trg_demo_default_fallback",
+      name: "デモ誘導フォールバック",
+      type: "dm",
+      matchType: "regex",
+      keywords: [
+        "^(?!.*(?:デモ|初回DM|初回デモ|アンケート|資料|チェックリスト|導線チェック|配信設計|導線設計|相談|詳細|予約|抽選|キャンペーン|フォロー特典|限定特典|来週|今週|明日|明後日|\\d{1,2}[/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日|\\d{1,2}:\\d{2}|\\d{1,2}時)).+$",
+      ],
+      fireMode: "unlimited",
+      actions: [
+        { type: "send_template", templateId: "tpl_demo_default_fallback" },
       ],
     },
   ];
