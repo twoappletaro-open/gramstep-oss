@@ -17,7 +17,7 @@ ${pc.bold("Health Check:")}   ${pc.cyan(state.workerUrl + "/health")}
 
 ${pc.bold("管理者ログイン:")}
   メール:     ${pc.cyan(state.operatorEmail)}
-  パスワード: ${pc.cyan(state.operatorPassword || "（セットアップ時に表示済み）")}
+  パスワード: ${pc.cyan(state.operatorPassword || "（既存の管理者パスワードをそのまま使用）")}
 
 ${pc.green("=========================================")}
 ${pc.bold("動作テスト")}

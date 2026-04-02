@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { generateHex, generateApiKey, generatePassword } from "../lib/crypto.js";
+import { generateHex, generateApiKey } from "../lib/crypto.js";
 import { SetupError } from "./check-deps.js";
 import type { SetupState } from "../lib/state.js";
 
@@ -94,7 +94,6 @@ export async function collectCredentials(state: SetupState): Promise<void> {
     if (p.isCancel(email)) throw new SetupError("ユーザーがキャンセルしました");
     state.operatorEmail = String(email);
   }
-  if (!state.operatorPassword) state.operatorPassword = generatePassword();
 
   p.log.success("認証情報を準備しました（シークレットは自動生成済み）");
 }

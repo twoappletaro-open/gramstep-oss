@@ -24,8 +24,10 @@ export async function seedOperator(state: SetupState, _projectDir: string): Prom
 
     if (response.status === 403) {
       // 管理者が既に存在する場合はスキップ
+      state.operatorPassword = "";
       spinner.stop("管理者は既に作成済みです（スキップ）");
       p.log.info("前回のセットアップで作成された管理者アカウントをそのまま使用します。");
+      p.log.info("パスワードは変更していません。前回表示された値を使用してください。");
       return;
     }
 
