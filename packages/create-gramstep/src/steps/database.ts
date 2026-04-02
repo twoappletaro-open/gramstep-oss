@@ -5,19 +5,29 @@ import pc from "picocolors";
 import { wrangler, extractId, WranglerError } from "../lib/wrangler.js";
 import type { SetupState } from "../lib/state.js";
 
-/** Generate a minimal temporary wrangler.toml for D1 operations */
-function writeTempToml(workerDir: string, dbName: string, dbId: string): string {
+function writeTempToml(workerDir: string, content: string): string {
   const tmpPath = join(workerDir, "wrangler.tmp.toml");
-  const content = `name = "gramstep-setup-tmp"
+  writeFileSync(tmpPath, content, "utf-8");
+  return tmpPath;
+}
+
+/** Generate a minimal temporary wrangler.toml for CLI bootstrap commands */
+function writeBootstrapToml(workerDir: string): string {
+  return writeTempToml(workerDir, `name = "gramstep-setup-tmp"
+compatibility_date = "2024-09-23"
+`);
+}
+
+/** Generate a minimal temporary wrangler.toml for D1 operations */
+function writeD1Toml(workerDir: string, dbName: string, dbId: string): string {
+  return writeTempToml(workerDir, `name = "gramstep-setup-tmp"
 compatibility_date = "2024-09-23"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "${dbName}"
 database_id = "${dbId}"
-`;
-  writeFileSync(tmpPath, content, "utf-8");
-  return tmpPath;
+`);
 }
 
 function cleanupTempToml(tmpPath: string): void {
@@ -36,55 +46,60 @@ function isAlreadyExists(e: unknown): boolean {
 export async function createDatabase(state: SetupState, projectDir: string): Promise<void> {
   p.log.step(pc.bold("D1 データベース作成"));
   const workerDir = `${projectDir}/apps/worker`;
+  const bootstrapToml = writeBootstrapToml(workerDir);
 
-  if (!state.d1DatabaseId) {
-    const spinner = p.spinner();
-    spinner.start("D1データベースを作成中...");
-    try {
-      const output = wrangler(["d1", "create", state.d1DatabaseName], workerDir);
-      const id = extractId(output, /database_id\s*=\s*"([^"]+)"/) ??
-                 extractId(output, /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
-      if (!id) throw new Error(`D1 ID抽出失敗: ${output}`);
-      state.d1DatabaseId = id;
-      spinner.stop(`D1作成完了: ${id.slice(0, 8)}...`);
-    } catch (e: unknown) {
-      spinner.stop("D1作成中にエラー");
-      if (isAlreadyExists(e)) {
-        // Resolve existing DB ID via list
-        const listOutput = wrangler(["d1", "list", "--json"], workerDir);
-        const dbs = JSON.parse(listOutput) as Array<{ uuid: string; name: string }>;
-        const existing = dbs.find((db) => db.name === state.d1DatabaseName);
-        if (existing) {
-          state.d1DatabaseId = existing.uuid;
-          p.log.info(`既存D1を検出: ${existing.uuid.slice(0, 8)}...`);
+  try {
+    if (!state.d1DatabaseId) {
+      const spinner = p.spinner();
+      spinner.start("D1データベースを作成中...");
+      try {
+        const output = wrangler(["d1", "create", state.d1DatabaseName, "--config", bootstrapToml], workerDir);
+        const id = extractId(output, /database_id\s*=\s*"([^"]+)"/) ??
+                  extractId(output, /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
+        if (!id) throw new Error(`D1 ID抽出失敗: ${output}`);
+        state.d1DatabaseId = id;
+        spinner.stop(`D1作成完了: ${id.slice(0, 8)}...`);
+      } catch (e: unknown) {
+        spinner.stop("D1作成中にエラー");
+        if (isAlreadyExists(e)) {
+          // Resolve existing DB ID via list
+          const listOutput = wrangler(["d1", "list", "--json", "--config", bootstrapToml], workerDir);
+          const dbs = JSON.parse(listOutput) as Array<{ uuid: string; name: string }>;
+          const existing = dbs.find((db) => db.name === state.d1DatabaseName);
+          if (existing) {
+            state.d1DatabaseId = existing.uuid;
+            p.log.info(`既存D1を検出: ${existing.uuid.slice(0, 8)}...`);
+          } else {
+            throw e;
+          }
         } else {
           throw e;
         }
+      }
+    } else {
+      p.log.info(`D1既存: ${state.d1DatabaseId.slice(0, 8)}...`);
+    }
+
+    // Apply migrations using temporary wrangler.toml with real D1 ID
+    const tmpToml = writeD1Toml(workerDir, state.d1DatabaseName, state.d1DatabaseId);
+    const spinner2 = p.spinner();
+    spinner2.start("マイグレーションを適用中...");
+    try {
+      wrangler(["d1", "migrations", "apply", "DB", "--remote", "--config", tmpToml], workerDir);
+      spinner2.stop("マイグレーション完了（13テーブル）");
+    } catch (e: unknown) {
+      spinner2.stop("マイグレーション適用中にエラー");
+      const msg = e instanceof Error ? e.message : "";
+      if (msg.includes("already been applied")) {
+        p.log.info("マイグレーションは適用済みです");
       } else {
         throw e;
       }
-    }
-  } else {
-    p.log.info(`D1既存: ${state.d1DatabaseId.slice(0, 8)}...`);
-  }
-
-  // Apply migrations using temporary wrangler.toml with real D1 ID
-  const tmpToml = writeTempToml(workerDir, state.d1DatabaseName, state.d1DatabaseId);
-  const spinner2 = p.spinner();
-  spinner2.start("マイグレーションを適用中...");
-  try {
-    wrangler(["d1", "migrations", "apply", "DB", "--remote", "--config", tmpToml], workerDir);
-    spinner2.stop("マイグレーション完了（13テーブル）");
-  } catch (e: unknown) {
-    spinner2.stop("マイグレーション適用中にエラー");
-    const msg = e instanceof Error ? e.message : "";
-    if (msg.includes("already been applied")) {
-      p.log.info("マイグレーションは適用済みです");
-    } else {
-      throw e;
+    } finally {
+      cleanupTempToml(tmpToml);
     }
   } finally {
-    cleanupTempToml(tmpToml);
+    cleanupTempToml(bootstrapToml);
   }
 }
 
