@@ -2,12 +2,14 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { wranglerWithStdin } from "../lib/wrangler.js";
 import type { SetupState } from "../lib/state.js";
+import { cleanupWorkerConfig, writeWorkerConfig } from "../lib/worker-config.js";
 
 /** Set Cloudflare Worker secrets via wrangler (stdin, never in args) */
 export async function setSecrets(state: SetupState, projectDir: string): Promise<void> {
   p.log.step(pc.bold("環境変数（Secrets）設定"));
 
   const workerDir = `${projectDir}/apps/worker`;
+  const workerConfigPath = writeWorkerConfig(workerDir, state, "wrangler.secrets.toml");
   const secrets: Record<string, string> = {
     META_APP_SECRET: state.metaAppSecret,
     META_APP_ID: state.metaAppId,
@@ -23,18 +25,22 @@ export async function setSecrets(state: SetupState, projectDir: string): Promise
 
   const errors: string[] = [];
   let count = 0;
-  for (const [name, value] of Object.entries(secrets)) {
-    if (!value) {
-      errors.push(`${name} が空のためスキップ`);
-      continue;
+  try {
+    for (const [name, value] of Object.entries(secrets)) {
+      if (!value) {
+        errors.push(`${name} が空のためスキップ`);
+        continue;
+      }
+      try {
+        wranglerWithStdin(["secret", "put", name, "--config", workerConfigPath], value, workerDir);
+        count++;
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "";
+        errors.push(`${name}: ${msg.slice(0, 100)}`);
+      }
     }
-    try {
-      wranglerWithStdin(["secret", "put", name], value, workerDir);
-      count++;
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "";
-      errors.push(`${name}: ${msg.slice(0, 100)}`);
-    }
+  } finally {
+    cleanupWorkerConfig(workerConfigPath);
   }
 
   if (errors.length > 0) {

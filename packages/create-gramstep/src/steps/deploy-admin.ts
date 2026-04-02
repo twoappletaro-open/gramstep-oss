@@ -5,6 +5,7 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { wranglerWithStdin } from "../lib/wrangler.js";
 import type { SetupState } from "../lib/state.js";
+import { cleanupWorkerConfig, writeWorkerConfig } from "../lib/worker-config.js";
 
 /** Build and deploy Admin UI (Next.js + OpenNext) to Cloudflare Workers */
 export async function deployAdmin(state: SetupState, projectDir: string): Promise<void> {
@@ -60,12 +61,17 @@ export async function deployAdmin(state: SetupState, projectDir: string): Promis
     // Worker側のDASHBOARD_URLを更新（CORS許可に必要）
     const workerDir = join(projectDir, "apps", "worker");
     p.log.info("Worker側のCORS設定（DASHBOARD_URL）を更新中...");
+    const workerConfigPath = writeWorkerConfig(workerDir, state, "wrangler.dashboard.toml");
     try {
-      wranglerWithStdin(["secret", "put", "DASHBOARD_URL"], state.adminUrl, workerDir);
+      wranglerWithStdin(["secret", "put", "DASHBOARD_URL", "--config", workerConfigPath], state.adminUrl, workerDir);
       p.log.success("DASHBOARD_URL更新完了（CORS有効化）");
     } catch {
       p.log.warn("DASHBOARD_URL更新に失敗。手動で設定してください:");
-      p.log.warn(`  echo "${state.adminUrl}" | npx wrangler secret put DASHBOARD_URL`);
+      p.log.warn(`  Worker名: ${state.workerName}`);
+      p.log.warn(`  値: ${state.adminUrl}`);
+      p.log.warn("  その後、create-gramstep を再実行するか wrangler から Secret を再投入してください。");
+    } finally {
+      cleanupWorkerConfig(workerConfigPath);
     }
   } catch (e: unknown) {
     spinner2.stop("管理画面デプロイ失敗");
