@@ -228,27 +228,16 @@ Instagram ──Webhook──→ Worker (Hono) ──Queue──→ DM送信
 <a id="screenshots"></a>
 ## スクリーンショット
 
-README 用の画面キャプチャを追加すると見栄えがかなり良くなります。公開前に最低でも以下のいずれかを入れるのを推奨します。
-
 - ダッシュボード
+- <img width="1425" height="791" alt="スクリーンショット 2026-04-03 10 47 11" src="https://github.com/user-attachments/assets/361c4de2-e91a-46fa-b01c-42048a3607e1" />
 - シナリオ編集画面
+- <img width="1463" height="794" alt="スクリーンショット 2026-04-03 11 00 05" src="https://github.com/user-attachments/assets/ba51f20b-7be8-47fc-939f-a2dad164ac1b" />
 - ユーザー詳細 / チャット画面
-- 設定画面
+- <img width="1381" height="737" alt="スクリーンショット 2026-04-03 11 01 09" src="https://github.com/user-attachments/assets/be49805c-9e4e-4a80-9053-1fadfb8d1bc9" />
+<img width="1338" height="622" alt="スクリーンショット 2026-04-03 11 01 39" src="https://github.com/user-attachments/assets/081fa52d-5e5b-4335-9508-d2be6b62be46" />
+- アンケート機能
+<img width="1303" height="795" alt="スクリーンショット 2026-04-03 11 02 23" src="https://github.com/user-attachments/assets/030fb2e9-0a62-40a0-b0e0-1271dd9b9bc5" />
 
-## この公開リポジトリに含めているもの
-
-- 実運用に必要なアプリケーションコード
-- セットアップ CLI
-- Cloudflare Worker / Web 管理画面 / 共通パッケージ
-- 公開用ドキュメント
-
-## この公開リポジトリに含めていないもの
-
-- 実運用 secrets や `.env`
-- Cloudflare の実 resource ID
-- 内部用 AI 補助ファイル
-- テストコード
-- 運用専用スクリプト
 
 <a id="quick-start"></a>
 ## クイックスタート
