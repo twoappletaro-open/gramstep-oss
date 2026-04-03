@@ -360,10 +360,20 @@ Meta Webhook / OAuth 設定
 npx create-gramstep@latest redeploy
 ```
 
+既存環境のソース更新から Worker/Admin 再デプロイまでまとめて行う場合:
+
+```bash
+npx create-gramstep@latest update
+```
+
 リポジトリから実行する場合:
 
 ```bash
 pnpm --filter create-gramstep dev -- redeploy
+```
+
+```bash
+pnpm --filter create-gramstep dev -- update
 ```
 
 <a id="manual-setup"></a>
