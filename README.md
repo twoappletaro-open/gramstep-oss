@@ -229,14 +229,17 @@ Instagram ──Webhook──→ Worker (Hono) ──Queue──→ DM送信
 ## スクリーンショット
 
 - ダッシュボード
-<img width="1000" alt="スクリーンショット 2026-04-03 10 47 11" src="https://github.com/user-attachments/assets/361c4de2-e91a-46fa-b01c-42048a3607e1" />
+<img width="600" alt="スクリーンショット 2026-04-03 10 47 11" src="https://github.com/user-attachments/assets/361c4de2-e91a-46fa-b01c-42048a3607e1" />
+
 - シナリオ編集画面
-<img width="1000" alt="スクリーンショット 2026-04-03 11 00 05" src="https://github.com/user-attachments/assets/ba51f20b-7be8-47fc-939f-a2dad164ac1b" />
+<img width="600" alt="スクリーンショット 2026-04-03 11 00 05" src="https://github.com/user-attachments/assets/ba51f20b-7be8-47fc-939f-a2dad164ac1b" />
+
 - ユーザー詳細 / チャット画面
-<img width="1000" alt="スクリーンショット 2026-04-03 11 01 09" src="https://github.com/user-attachments/assets/be49805c-9e4e-4a80-9053-1fadfb8d1bc9" />
-<img width="1000" alt="スクリーンショット 2026-04-03 11 01 39" src="https://github.com/user-attachments/assets/081fa52d-5e5b-4335-9508-d2be6b62be46" />
+<img width="600" alt="スクリーンショット 2026-04-03 11 01 09" src="https://github.com/user-attachments/assets/be49805c-9e4e-4a80-9053-1fadfb8d1bc9" />
+<img width="600" alt="スクリーンショット 2026-04-03 11 01 39" src="https://github.com/user-attachments/assets/081fa52d-5e5b-4335-9508-d2be6b62be46" />
+
 - アンケート機能
-<img width="1000" alt="スクリーンショット 2026-04-03 11 02 23" src="https://github.com/user-attachments/assets/030fb2e9-0a62-40a0-b0e0-1271dd9b9bc5" />
+<img width="600" alt="スクリーンショット 2026-04-03 11 02 23" src="https://github.com/user-attachments/assets/030fb2e9-0a62-40a0-b0e0-1271dd9b9bc5" />
 
 
 <a id="quick-start"></a>
