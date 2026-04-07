@@ -49,7 +49,24 @@ export async function connectInstagram(state: SetupState, _projectDir: string): 
   });
   if (p.isCancel(webhookDone)) throw new SetupError("ユーザーがキャンセルしました");
 
-  // --- 5. Publish readiness ---
+  // --- 5. Basic settings before publish ---
+  const privacyPolicyUrl = `${state.workerUrl}/privacy-policy`;
+  const dataDeletionUrl = `${state.workerUrl}/api/data-deletion`;
+  p.log.step(pc.bold("公開前に基本設定を入力"));
+  p.log.info("設定 → 基本 を開いて、公開前に以下を設定してください。");
+  p.log.info("");
+  p.log.info(`  プライバシーポリシーURL: ${pc.cyan(privacyPolicyUrl)}`);
+  p.log.info(`  データの削除手順URL:   ${pc.cyan(dataDeletionUrl)}`);
+  p.log.info(`  連絡先メールアドレス:   ${pc.cyan(state.operatorEmail || "運用用メールアドレス")}`);
+  p.log.info("");
+  p.log.info("特にプライバシーポリシーURLは、アプリ公開前に設定が必要です。");
+  const basicSettingsDone = await p.confirm({
+    message: "基本設定（Privacy Policy / Data Deletion / Contact Email）を入力しましたか？",
+    initialValue: true,
+  });
+  if (p.isCancel(basicSettingsDone)) throw new SetupError("ユーザーがキャンセルしました");
+
+  // --- 6. Publish readiness ---
   p.log.step(pc.bold("Meta側の公開状態を確認"));
   p.log.info("Meta Developers ダッシュボードで、対象ユースケースの " + pc.yellow("「ユースケースをテストする」") + " にチェックが入っているか確認してください。");
   p.log.info("その後、アプリ全体を " + pc.yellow("公開") + " してください。");

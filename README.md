@@ -462,7 +462,18 @@ curl -X POST https://<your-worker>.workers.dev/api/auth/manual-token \
 ユースケース → カスタマイズ → 「Instagramビジネスログインを設定」：
 - OAuth リダイレクトURI: `https://<your-worker>.workers.dev/api/auth/callback`
 
-### Step 10: アプリレビューのページを確認
+### Step 10: 公開前に基本設定を入力
+
+設定 → ベーシック：
+- プライバシーポリシーURL: `https://<your-worker>.workers.dev/privacy-policy`
+- データの削除手順URL: `https://<your-worker>.workers.dev/api/data-deletion`
+- 連絡先メールアドレス
+
+補足:
+- 特にプライバシーポリシーURLは、アプリ公開前に設定が必要です
+- これらのURLは CLI が自動で生成して表示します
+
+### Step 11: アプリレビューのページを確認
 
 Meta Developers ダッシュボードで、対象ユースケースの「ユースケースをテストする」にチェックが入っていることを確認する
 
