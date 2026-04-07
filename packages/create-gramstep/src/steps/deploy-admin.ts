@@ -1,4 +1,4 @@
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { writeFileSync, unlinkSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 import * as p from "@clack/prompts";
@@ -13,10 +13,19 @@ export async function deployAdmin(state: SetupState, projectDir: string): Promis
 
   const webDir = join(projectDir, "apps", "web");
   const adminWorkerName = `${state.workerName}-admin`;
+  const webWranglerPath = join(webDir, "wrangler.toml");
+  const originalWranglerToml = existsSync(webWranglerPath) ? readFileSync(webWranglerPath, "utf-8") : null;
 
   // Write .env.production with Worker URL
   const envPath = join(webDir, ".env.production");
   writeFileSync(envPath, `NEXT_PUBLIC_API_URL=${state.workerUrl}\n`, "utf-8");
+
+  if (originalWranglerToml) {
+    const nextToml = originalWranglerToml.match(/^name\s*=\s*".*"$/m)
+      ? originalWranglerToml.replace(/^name\s*=\s*".*"$/m, `name = "${adminWorkerName}"`)
+      : `name = "${adminWorkerName}"\n${originalWranglerToml}`;
+    writeFileSync(webWranglerPath, nextToml, "utf-8");
+  }
 
   // Build Next.js
   const spinner = p.spinner();
@@ -83,5 +92,8 @@ export async function deployAdmin(state: SetupState, projectDir: string): Promis
     throw new Error(`管理画面デプロイ失敗: ${msg.slice(0, 300)}`);
   } finally {
     if (existsSync(envPath)) unlinkSync(envPath);
+    if (originalWranglerToml !== null) {
+      writeFileSync(webWranglerPath, originalWranglerToml, "utf-8");
+    }
   }
 }
