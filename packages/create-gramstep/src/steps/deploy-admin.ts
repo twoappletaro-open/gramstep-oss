@@ -1,6 +1,6 @@
 import { writeFileSync, unlinkSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { wranglerWithStdin } from "../lib/wrangler.js";
@@ -31,7 +31,7 @@ export async function deployAdmin(state: SetupState, projectDir: string): Promis
   const spinner = p.spinner();
   spinner.start("Next.jsをビルド中...");
   try {
-    execSync("pnpm run build", {
+    execFileSync("pnpm", ["run", "build"], {
       cwd: webDir,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
@@ -51,21 +51,30 @@ export async function deployAdmin(state: SetupState, projectDir: string): Promis
 
   // Build & Deploy with OpenNext for Cloudflare
   const spinner2 = p.spinner();
-  spinner2.start("OpenNext ビルド & Cloudflare Workers にデプロイ中...");
+  spinner2.start("OpenNext ビルド中...");
   try {
-    const output = execSync(`npx opennextjs-cloudflare build && npx opennextjs-cloudflare deploy`, {
+    execFileSync("npx", ["opennextjs-cloudflare", "build", "--config", "wrangler.toml"], {
       cwd: webDir,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 300_000,
     });
+    spinner2.stop("OpenNext ビルド完了");
 
-    // Extract URL from deploy output
-    const urlMatch = output.match(/(https:\/\/[^\s]+\.workers\.dev)/);
-    state.adminUrl = urlMatch?.[1] ?? `https://${adminWorkerName}.workers.dev`;
+    p.log.step(pc.bold("OpenNext / Cloudflare デプロイ"));
+    p.log.info("ここで表示される Wrangler のログが、そのままデプロイ詳細です。");
+
+    execFileSync("npx", ["opennextjs-cloudflare", "deploy", "--config", "wrangler.toml"], {
+      cwd: webDir,
+      encoding: "utf-8",
+      stdio: "inherit",
+      timeout: 300_000,
+    });
+
+    state.adminUrl = `https://${adminWorkerName}.workers.dev`;
     state.dashboardUrl = state.adminUrl;
 
-    spinner2.stop(`管理画面デプロイ完了: ${pc.cyan(state.adminUrl)}`);
+    p.log.success(`管理画面デプロイ完了: ${pc.cyan(state.adminUrl)}`);
 
     // Worker側のDASHBOARD_URLを更新（CORS許可に必要）
     const workerDir = join(projectDir, "apps", "worker");
@@ -85,10 +94,12 @@ export async function deployAdmin(state: SetupState, projectDir: string): Promis
   } catch (e: unknown) {
     spinner2.stop("管理画面デプロイ失敗");
     const msg = e instanceof Error ? e.message : "";
-    const stderr = (e as { stderr?: string }).stderr ?? "";
     p.log.error("OpenNext/Cloudflareデプロイでエラーが発生しました。");
-    p.log.info(`手動デプロイ: cd apps/web && pnpm build && npx opennextjs-cloudflare deploy`);
-    if (stderr) p.log.info(pc.dim(stderr.slice(0, 300)));
+    p.log.info("手動デプロイ:");
+    p.log.info("  cd apps/web");
+    p.log.info("  pnpm run build");
+    p.log.info("  npx opennextjs-cloudflare build --config wrangler.toml");
+    p.log.info("  npx opennextjs-cloudflare deploy --config wrangler.toml");
     throw new Error(`管理画面デプロイ失敗: ${msg.slice(0, 300)}`);
   } finally {
     if (existsSync(envPath)) unlinkSync(envPath);
