@@ -8,10 +8,37 @@ import type { SetupState } from "../lib/state.js";
 export async function connectInstagram(state: SetupState, _projectDir: string): Promise<void> {
   p.log.step(pc.bold("Instagramアカウント接続 & Meta Console 設定"));
 
-  // --- 1. Instagram Business Login ---
+  // --- 1. Token paste ---
+  await registerToken(state);
+
+  // --- 2. Webhook subscription ---
+  p.log.step(pc.bold("Webhookサブスクリプションをオン"));
+  p.log.info("トークン生成画面で " + pc.yellow("「Webhookサブスクリプション」をオン") + " にしてください。");
+  const webhookSubDone = await p.confirm({
+    message: "Webhookサブスクリプションをオンにしましたか？",
+    initialValue: true,
+  });
+  if (p.isCancel(webhookSubDone)) throw new SetupError("ユーザーがキャンセルしました");
+
+  // --- 3. Webhook configuration ---
+  const webhookUrl = `${state.workerUrl}/webhook`;
+  p.log.step(pc.bold("Webhooksを設定"));
+  p.log.info("ユースケース → カスタマイズ → " + pc.yellow("「3. Webhooksを設定する」") + " を開いてください。");
+  p.log.info("");
+  p.log.info(`  Callback URL:   ${pc.cyan(webhookUrl)}`);
+  p.log.info(`  Verify Token:   ${pc.yellow(state.webhookVerifyToken)}`);
+  p.log.info("");
+  p.log.info("上記の値を入力して「確認して保存」で保存してください。");
+  const webhookDone = await p.confirm({
+    message: "Webhooksの設定は完了しましたか？",
+    initialValue: true,
+  });
+  if (p.isCancel(webhookDone)) throw new SetupError("ユーザーがキャンセルしました");
+
+  // --- 4. Instagram Business Login ---
   const oauthRedirectUrl = `${state.workerUrl}/api/auth/callback`;
   p.log.step(pc.bold("Instagramビジネスログインを設定"));
-  p.log.info("Facebook / Meta Developers で " + pc.yellow("「Instagramビジネスログインを設定」") + " を開いてください。");
+  p.log.info("ユースケース → カスタマイズ → " + pc.yellow("「Instagramビジネスログインを設定」") + " を開いてください。");
   p.log.info("");
   p.log.info(`  リダイレクトURL: ${pc.cyan(oauthRedirectUrl)}`);
   p.log.info("");
@@ -22,44 +49,18 @@ export async function connectInstagram(state: SetupState, _projectDir: string): 
   });
   if (p.isCancel(businessLoginDone)) throw new SetupError("ユーザーがキャンセルしました");
 
-  // --- 2. Token paste ---
-  await registerToken(state);
-
-  // --- 3. Webhook subscription ---
-  p.log.step(pc.bold("Webhookサブスクリプションをオン"));
-  p.log.info("トークン生成画面で " + pc.yellow("「Webhookサブスクリプション」をオン") + " にしてください。");
-  const webhookSubDone = await p.confirm({
-    message: "Webhookサブスクリプションをオンにしましたか？",
-    initialValue: true,
-  });
-  if (p.isCancel(webhookSubDone)) throw new SetupError("ユーザーがキャンセルしました");
-
-  // --- 4. Webhook configuration ---
-  const webhookUrl = `${state.workerUrl}/webhook`;
-  p.log.step(pc.bold("Webhooksを設定"));
-  p.log.info("ユースケース → カスタマイズ → " + pc.yellow("「3. Webhooksを設定する」") + " を開いてください。");
-  p.log.info("");
-  p.log.info(`  Callback URL:   ${pc.cyan(webhookUrl)}`);
-  p.log.info(`  Verify Token:   ${pc.yellow(state.webhookVerifyToken)}`);
-  p.log.info("");
-  p.log.info("上記の値を設定してください。");
-  const webhookDone = await p.confirm({
-    message: "Webhooksの設定は完了しましたか？",
-    initialValue: true,
-  });
-  if (p.isCancel(webhookDone)) throw new SetupError("ユーザーがキャンセルしました");
-
   // --- 5. Basic settings before publish ---
   const privacyPolicyUrl = `${state.workerUrl}/privacy-policy`;
   const dataDeletionUrl = `${state.workerUrl}/api/data-deletion`;
   p.log.step(pc.bold("公開前に基本設定を入力"));
-  p.log.info("設定 → 基本 を開いて、公開前に以下を設定してください。");
+  p.log.info("左メニューの " + pc.yellow("「公開」") + " に移動し、" + pc.yellow("「プライバシーポリシーURLのアプリ設定に移動」") + " をクリックしてください。");
+  p.log.info(pc.yellow("アプリの設定 → ベーシック") + " で、公開前に以下を設定してください。");
   p.log.info("");
   p.log.info(`  プライバシーポリシーURL: ${pc.cyan(privacyPolicyUrl)}`);
   p.log.info(`  データの削除手順URL:   ${pc.cyan(dataDeletionUrl)}`);
   p.log.info(`  連絡先メールアドレス:   ${pc.cyan(state.operatorEmail || "運用用メールアドレス")}`);
   p.log.info("");
-  p.log.info("特にプライバシーポリシーURLは、アプリ公開前に設定が必要です。");
+  p.log.info("右下の「変更を保存」で保存してください。特にプライバシーポリシーURLは、アプリ公開前に設定が必要です。");
   const basicSettingsDone = await p.confirm({
     message: "基本設定（Privacy Policy / Data Deletion / Contact Email）を入力しましたか？",
     initialValue: true,
@@ -69,7 +70,7 @@ export async function connectInstagram(state: SetupState, _projectDir: string): 
   // --- 6. Publish readiness ---
   p.log.step(pc.bold("Meta側の公開状態を確認"));
   p.log.info("Meta Developers ダッシュボードで、対象ユースケースの " + pc.yellow("「ユースケースをテストする」") + " にチェックが入っているか確認してください。");
-  p.log.info("その後、アプリ全体を " + pc.yellow("公開") + " してください。");
+  p.log.info("その後、左メニューの " + pc.yellow("「公開」") + " を開き、右下の " + pc.yellow("「公開」") + " ボタンでアプリ全体を公開してください。");
   p.log.info(pc.dim("※ 公開されていないと、Webhookのテスト送信は通っても実際のDMが届かないことがあります。"));
   const publishReadyDone = await p.confirm({
     message: "ユースケースのテスト完了とアプリ公開を確認しましたか？",
@@ -83,10 +84,12 @@ export async function connectInstagram(state: SetupState, _projectDir: string): 
 async function registerToken(state: SetupState): Promise<void> {
   p.log.info(`${pc.bold("Meta Developers Console でトークンを生成してください:")}`);
   p.log.info("");
-  p.log.info("  ユースケース → カスタマイズ → 「2. アクセストークンを生成する」");
+  p.log.info("  ダッシュボードの概要 → 「Instagramでメッセージとコンテンツを管理」→「ユースケースをカスタマイズ」");
+  p.log.info("  → 「2. アクセストークンを生成する」を開く");
   p.log.info("  → テスターアカウントの「トークンを生成」をクリック");
-  p.log.info("  → Instagramにログインして認証を許可");
-  p.log.info("  → 表示されたアクセストークンとIG User IDをコピー");
+  p.log.info("  → Instagram にログインして認証を許可");
+  p.log.info("  → 「理解しました」にチェックを入れる");
+  p.log.info("  → 表示されたアクセストークンと IG User ID をコピー");
   p.log.info("");
 
   const igUserId = await p.text({

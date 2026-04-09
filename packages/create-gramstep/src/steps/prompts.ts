@@ -8,27 +8,32 @@ const META_SETUP_GUIDE = `
 ${pc.bold("Meta Developers アプリ事前準備:")}
 
   1. ${pc.cyan("https://developers.facebook.com/apps/")} → 「アプリを作成」
-     ${pc.yellow("→ 「Instagramでメッセージとコンテンツを管理」を選択")}
-     → 現時点ではビジネスポートフォリオをリンクしない
-     → 公開の要件は「次へ」でスルー → 「アプリを作成」
+     → アプリ名に任意の名前を入力して「次へ」
+     → 左のフィルターで ${pc.yellow("「すべて」")} を選び、${pc.yellow("「Instagramでメッセージとコンテンツを管理」")} のみチェックして「次へ」
+     → ${pc.yellow("現時点ではビジネスポートフォリオをリンクしない")} を選んで「次へ」
+     → 公開の要件は「次へ」でスルー
+     → 概要で「アプリを作成」
+     ${pc.dim("※ ここで作成できない場合は、不要なアプリを削除する必要があります")}
 
-  2. ダッシュボード → ユースケース → カスタマイズ
-     ${pc.yellow("「必要なメッセージアクセス許可を追加する」")}
-       「追加」を ${pc.bold("2回")} クリック:
-         1回目: ${pc.yellow("instagram_business_manage_messages")}（DM送受信）
-         2回目: ${pc.yellow("Business Asset User Profile Access")}（プロフィール取得に必須）
-       ${pc.dim("※ HUMAN_AGENT（7日間の有人返信）も必要に応じて追加")}
+  2. ダッシュボードの概要で「Instagramでメッセージとコンテンツを管理」→ ${pc.yellow("「ユースケースをカスタマイズ」")}
+     → ${pc.yellow("「Add all required permissions」")} をクリック
+     → ボタンが ${pc.yellow("「Go to permissions and features」")} に変わったら再度クリック
+     → アクセス許可と機能で ${pc.yellow("Business Asset User Profile Access")} を追加
+     ${pc.dim("※ HUMAN_AGENT（7日間の有人返信）も必要に応じて追加")}
 
-  3. アプリの役割 → 役割
-     ${pc.yellow("→ 「Instagramテスター」として対象アカウントを追加")}
-     → 表示されるリンクをクリック
+  3. 左メニュー「アプリの役割」→「役割」
+     ${pc.yellow("→ 「メンバーを追加」から Instagramテスターとして対象アカウントを追加")}
 
-  4. Instagram管理画面に移動したら:
-     ${pc.yellow("→ 「テスターへのご招待」タブを開く → 承認")}
+  4. 表示される
+     ${pc.yellow("「Instagramユーザーは、プロフィールのアプリとウェブサイトセクションから招待を管理できます。」")}
+     のリンクをクリック
+     → Instagram管理画面で「テスターへのご招待」タブを開いて承認
 
-  5. 設定 → 基本 から ${pc.bold("アプリID")} と ${pc.bold("app secret")} を取得
+  補足:
+     CLIで入力する ${pc.bold("アプリID")} と ${pc.bold("app secret")} は
+     ${pc.yellow("アプリの設定 → ベーシック")} から取得できます
 
-  6. ${pc.dim("後続のCLIステップで Instagramビジネスログイン のリダイレクトURL設定を案内します")}
+  ${pc.dim("後続のCLIステップでアクセストークン生成、Webhook設定、Instagramビジネスログイン、公開前設定を順番に案内します")}
 
 `;
 
@@ -47,7 +52,7 @@ export async function collectCredentials(state: SetupState): Promise<void> {
   }
 
   if (!state.metaAppId) {
-    p.log.info(`${pc.dim("設定 → 基本 → アプリID から取得")}`);
+    p.log.info(`${pc.dim("アプリの設定 → ベーシック → アプリID から取得")}`);
     const appId = await p.text({
       message: "アプリID:",
       placeholder: "1234567890123456",
@@ -58,7 +63,7 @@ export async function collectCredentials(state: SetupState): Promise<void> {
   }
 
   if (!state.metaAppSecret) {
-    p.log.info(`${pc.dim("設定 → 基本 → app secret から取得")}`);
+    p.log.info(`${pc.dim("アプリの設定 → ベーシック → app secret から取得")}`);
     const appSecret = await p.password({
       message: "App Secret:",
       validate: (v) => (v.length < 16 ? "App Secretが短すぎます" : undefined),
